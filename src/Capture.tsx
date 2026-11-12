@@ -1,7 +1,8 @@
-import { ArrowLeft, Check, CornerDownLeft, X } from 'lucide-react'
+import { ArrowLeft, Check, CornerDownLeft, TriangleAlert, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, errorText, type CaptureContext, type CaptureMode, type TrackingAction } from './api'
-import { useData, useNativeEvent } from './hooks'
+import { useData, useNativeEvent, useToday, useWorkdaySummary } from './hooks'
+import { localDay } from './time'
 import { Brand, CategoryOptions } from './ui'
 import CaptureTracking from './CaptureTracking'
 
@@ -31,7 +32,7 @@ function createKey() {
 }
 
 export default function Capture() {
-  const { snapshot, error: dataError, refresh } = useData()
+  const { snapshot, revision, error: dataError, refresh } = useData()
   const [drafts, setDrafts] = useState(() => ({ quick: readDraft('quick'), task: readDraft('task') }))
   const [context, setContext] = useState<CaptureContext>()
   const latestContext = useRef<CaptureContext | undefined>(undefined)
@@ -46,6 +47,15 @@ export default function Capture() {
   const running = useRef(false)
   const input = useRef<HTMLInputElement>(null)
   const timer = useRef<number | undefined>(undefined)
+
+  const today = useToday()
+  const session = snapshot?.tracking.session
+  const date = session ? localDay(new Date(session.startedAt)) : today
+  const workday = useWorkdaySummary(date, revision, !!snapshot, !!session)
+  const taskCount = snapshot?.tracking.tasks.length ?? 0
+  const taskLimit = taskMode && taskCount >= 2
+  const showTaskNotice = taskMode && taskCount > 0 && !saved
+  const startLabel = taskCount === 1 ? 'Start second task' : 'Start task'
 
   const defaultCategory = snapshot?.captureCategory ?? null
   const desiredCategory = draft.categoryId === undefined ? defaultCategory : draft.categoryId
@@ -113,7 +123,7 @@ export default function Capture() {
 
   async function submit(event: FormEvent) {
     event.preventDefault()
-    if (!context || !settings || !draft.description.trim() || running.current || saved || changingTracking) return
+    if (!context || !settings || !draft.description.trim() || running.current || saved || changingTracking || taskLimit) return
     running.current = true
     setBusy(true)
     setError('')
@@ -163,6 +173,7 @@ export default function Capture() {
         <div className="flex items-stretch gap-2">
           <input
             autoFocus ref={input} aria-label={taskMode ? 'Task' : 'Activity'} placeholder={taskMode ? 'What are you working on?' : 'What did you work on?'}
+            aria-describedby={showTaskNotice ? 'capture-task-notice' : undefined}
             value={draft.description} readOnly={!context || busy || (saved && settings?.hideAfterSave)} maxLength={4000}
             onChange={event => {
               setError('')
@@ -173,9 +184,9 @@ export default function Capture() {
               update({ description: event.target.value, categoryId: draft.categoryId })
             }}
           />
-          <button className="button primary capture-save" disabled={controlsDisabled || !settings || !draft.description.trim()}>
+          <button className="button primary capture-save" disabled={controlsDisabled || taskLimit || !settings || !draft.description.trim()}>
             {saved ? <Check size={16} /> : <CornerDownLeft size={16} />}
-            {saved ? (taskMode ? 'Started' : 'Saved') : busy ? 'Saving' : taskMode ? 'Start' : 'Save'}
+            {saved ? (taskMode ? 'Started' : 'Saved') : busy ? 'Saving' : taskMode ? startLabel : 'Save'}
           </button>
         </div>
         <div className="capture-options">
@@ -188,17 +199,22 @@ export default function Capture() {
           </select>
           <span className="capture-hint"><kbd>Enter</kbd> to {taskMode ? 'start' : 'save'} <span aria-hidden="true">·</span> <kbd>Esc</kbd> to hide</span>
         </div>
+        {showTaskNotice && <p className="capture-task-notice" id="capture-task-notice" role="status">
+          <TriangleAlert size={14} aria-hidden="true" />
+          {taskLimit ? 'Two tasks are running. Stop one to start another.' : 'Your current task will keep running.'}
+        </p>}
         {saved && <span className="sr-only" role="status">{taskMode ? 'Task started' : 'Activity saved'}</span>}
       </form>
       {snapshot && <CaptureTracking
         tracking={snapshot.tracking}
+        summary={workday?.summary}
         format={snapshot.settings.timeFormat}
         disabled={controlsDisabled}
         onAction={(action: TrackingAction) => void runControl(() => api.track(action))}
         onStartTask={taskMode ? undefined : () => void runControl(() => api.openCapture('task'))}
       />}
-      {(error || dataError) && <div className="capture-error" role="alert">
-        {error || dataError} {dataError && <button type="button" onClick={refresh}>Retry</button>}
+      {(error || dataError || workday?.error) && <div className="capture-error" role="alert">
+        {error || dataError || workday?.error} {(dataError || workday?.error) && <button type="button" onClick={refresh}>Retry</button>}
       </div>}
     </main>
   )

@@ -5,7 +5,7 @@ WorkLog is a personal, local-first work journal for Ubuntu 24.04. It keeps quick
 ## Features
 
 - **Quick Capture** opens a small entry window from the top-panel menu, an application shortcut, or the dashboard. Press **Enter** to save and **Esc** to hide the window while keeping your draft.
-- **Workday tracking** records sessions, tasks, and breaks from the dashboard or tray. After **End day**, the Workday card shows time worked and time spent on breaks.
+- **Workday tracking** records sessions, up to two concurrent task timers, and breaks. The toolbar shows live time worked, and Quick Capture also shows time spent on breaks and how many you’ve completed.
 - **Journal** lets you browse by date, search activities and references, and filter by category. You can edit entries and time ranges or add them after the fact.
 - **Daily review** lets you add notes and mark a day reviewed. Editing the day’s records flags it for another look. Review reminders are configurable.
 - **Local data controls** include SQLite backup and restore, CSV export, editable categories, reference prefixes such as `NCR`, and light and dark themes.
@@ -35,10 +35,10 @@ npm run tauri build -- --bundles deb
 
 Tauri writes the package under `src-tauri/target/release/bundle/deb/`. Build on Ubuntu 24.04 for your target architecture. [Tauri Debian packaging](https://v2.tauri.app/distribute/debian/)
 
-For the 0.2.5 amd64 build, run the following from the repository root. If you are upgrading, choose **Quit WorkLog** from the tray first.
+For the 0.2.11 amd64 build, run the following from the repository root. If you are upgrading, choose **Quit WorkLog** from the tray first.
 
 ```bash
-sudo apt install ./src-tauri/target/release/bundle/deb/WorkLog_0.2.5_amd64.deb
+sudo apt install ./src-tauri/target/release/bundle/deb/WorkLog_0.2.11_amd64.deb
 ```
 
 Open **WorkLog** from Applications or run `worklog` in a terminal.
@@ -46,13 +46,18 @@ Open **WorkLog** from Applications or run `worklog` in a terminal.
 ## Everyday use
 
 1. Select **Start day**, then **Start task** and enter what you are working on. Starting a task or a break also opens a session if needed.
-2. Select **Take break** to finish the current task and begin a break. Use **End break**, **Stop task**, or **End day** to finish tracking.
-3. Use the pencil in the Workday card to correct session times, or the trash icon to remove a finished session. Use the timeline’s **+** to add a past activity or break and enable **Set end time** to record a range.
-4. Select **Review day** to write a note and mark the day reviewed. Use **Reopen day** when you want to return to it.
+2. To run another task alongside the first, select **Start second task**. Quick Capture shows a warning that the first timer will keep running. Use **Stop task** beside either task to finish its timer.
+3. Select **Take break** to stop any running tasks and begin a break. **End break** finishes the break, and **End day** closes the session and any running timers.
+4. Use the pencil in the Workday card to correct session times, or the trash icon to remove a finished session. Use the timeline’s **+** to add a past activity or break and enable **Set end time** to record a range.
+5. Select **Review day** to write a note and mark the day reviewed. Use **Reopen day** when you want to return to it.
 
-**Time worked** totals finished sessions that started on the selected date, subtracting the recorded breaks within them. Overlapping time counts once. Overnight sessions appear on the date they started.
+To adjust an activity, click its pencil in the timeline and type into **Start time** or **End time**. In 12-hour mode, choose **AM** or **PM** beside the time.
 
-Quick Capture shows the current workday and task below the entry field. Use **Start day** or **End day** to manage the session, and **Start task** or **Stop task** to manage the current task. With a workday open and no task running, choose **Take break**. The control switches to **End break** until the break is finished.
+Select **By activity** in the timeline to see the total in hours and minutes for matching descriptions, categories, and references on the selected date. Expand a group to see and edit its entries. Totals include running timers, count overlapping ranges within a group once, and skip untimed notes.
+
+**Time worked** totals sessions that started on the selected date, subtracting recorded breaks. The live total pauses during a break and stays available in the toolbar while you scroll. Overlapping time counts once, and overnight sessions appear on the date they started. Use the sidebar button in the toolbar to collapse or expand the full left column.
+
+Quick Capture shows the workday, running tasks, and totals below the entry field. The break duration includes an ongoing break, and the completed count updates when it ends. With a workday open and no task running, choose **Take break**. When two tasks are running, **Manage running tasks** in the tray opens Quick Capture so you can stop either timer.
 
 In the dashboard, **Ctrl+N** opens Quick Capture and **Ctrl+F** focuses journal search. Closing the dashboard hides it by default. Change **Minimize to tray** in Settings to use the dock, or select **Quit WorkLog** to stop the app.
 
@@ -84,8 +89,8 @@ The test suite covers journal entries, workday totals, reviews, reminders, datab
 
 - [ ] Launch the installed app and confirm that today’s timeline opens. Try Quick Capture from the tray, Applications launcher, and desktop shortcut. Verify that a second launch opens the existing app.
 - [ ] Enter `NCR 2456 - Tested the issue` in Quick Capture and press Enter twice. Verify that one entry is saved with its reference. Confirm that an unsaved draft survives **Esc**.
-- [ ] Start and stop a task, take a break, and end the day. Check the net work total, then edit the session and verify that the total updates. Try adding a past activity and break.
-- [ ] Shrink the dashboard and scroll a long timeline with the mouse wheel and keyboard. Check that the toolbar stays visible.
+- [ ] Start a second task and verify the warning and both independent timers. Stop one task, take a break from the dashboard, then end the day. Check worked time, break duration, and completed breaks in Quick Capture. Edit the session and verify the total updates.
+- [ ] Scroll to the end of a long timeline with the mouse wheel and keyboard in both a maximized and a small window. Check that the toolbar stays visible and further scrolling leaves the last entry in place.
 - [ ] Search and filter the journal, edit categories, and review a day. Confirm that a later edit flags the day for review.
 - [ ] Check theme, time format, tray behavior, and launch at login. Send a test notification, then schedule a review reminder to verify its dashboard and snooze actions.
 - [ ] Back up the journal, export entries to CSV, and try cancelling and confirming a restore with test data.

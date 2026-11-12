@@ -1,4 +1,4 @@
-use chrono::Local;
+use chrono::{Local, Utc};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 use tauri_plugin_autostart::ManagerExt;
@@ -127,7 +127,10 @@ pub async fn track_work(
 
 #[tauri::command]
 pub async fn workday_summary(desktop: State<'_, Desktop>, date: String) -> Reply<WorkdaySummary> {
-    desktop.db()?.workday_summary(&date).map_err(message)
+    desktop
+        .db()?
+        .workday_summary(&date, Utc::now().timestamp_millis())
+        .map_err(message)
 }
 
 #[tauri::command]

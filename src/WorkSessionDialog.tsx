@@ -1,18 +1,20 @@
 import { useState, type FormEvent } from 'react'
-import { api, errorText, type WorkSession } from './api'
-import { localDateTime, timestampFromInput } from './time'
+import { api, errorText, type TimeFormat, type WorkSession } from './api'
+import DateTimeFields from './DateTimeFields'
+import { dateTimeInput, timestampFromInput } from './time'
 import { ErrorNotice, Modal } from './ui'
 
 interface Props {
   session: WorkSession
   mode: 'edit' | 'delete'
+  format: TimeFormat
   formatTime: (value: number) => string
   onDismiss: () => void
 }
 
-export default function WorkSessionDialog({ session, mode, formatTime, onDismiss }: Props) {
-  const [start, setStart] = useState(() => localDateTime(new Date(session.startedAt)))
-  const [end, setEnd] = useState(() => session.endedAt === null ? '' : localDateTime(new Date(session.endedAt)))
+export default function WorkSessionDialog({ session, mode, format, formatTime, onDismiss }: Props) {
+  const [start, setStart] = useState(() => dateTimeInput(new Date(session.startedAt), format))
+  const [end, setEnd] = useState(() => session.endedAt === null ? null : dateTimeInput(new Date(session.endedAt), format))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const deleting = mode === 'delete'
@@ -26,8 +28,8 @@ export default function WorkSessionDialog({ session, mode, formatTime, onDismiss
       if (deleting) {
         await api.deleteWorkSession(session)
       } else {
-        const startAt = timestampFromInput(start, session.startedAt)
-        const endAt = session.endedAt === null ? null : timestampFromInput(end, session.endedAt)
+        const startAt = timestampFromInput(start, format, 'start', session.startedAt)
+        const endAt = end ? timestampFromInput(end, format, 'end', session.endedAt ?? undefined) : null
         await api.updateWorkSession(session, startAt, endAt)
       }
       onDismiss()
@@ -45,14 +47,16 @@ export default function WorkSessionDialog({ session, mode, formatTime, onDismiss
     <form className="stack-form" onSubmit={submit}>
       {deleting
         ? <p>{formatTime(session.startedAt)}{session.endedAt !== null && ' – ' + formatTime(session.endedAt)}</p>
-        : <div className="form-grid">
-          <label className="field">Start date and time
-            <input autoFocus required type="datetime-local" step={1} value={start} onChange={event => setStart(event.target.value)} />
-          </label>
-          {session.endedAt !== null && <label className="field">End date and time
-            <input required type="datetime-local" step={1} value={end} onChange={event => setEnd(event.target.value)} />
-          </label>}
-        </div>}
+        : <>
+          <DateTimeFields label="Start" value={start} format={format} focusTime onChange={value => {
+            setStart(value)
+            setError('')
+          }} />
+          {end && <DateTimeFields label="End" value={end} format={format} onChange={value => {
+            setEnd(value)
+            setError('')
+          }} />}
+        </>}
       {error && <ErrorNotice>{error}</ErrorNotice>}
       <div className="modal-actions">
         <button autoFocus={deleting} type="button" className="button secondary" disabled={busy} onClick={dismiss}>Cancel</button>

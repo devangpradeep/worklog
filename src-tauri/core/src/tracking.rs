@@ -10,10 +10,18 @@ use crate::{
 
 impl Store {
     pub fn tracking_state(&self) -> Result<TrackingState> {
-        Ok(TrackingState {
+        let mut state = TrackingState {
             session: open_session(&self.conn)?,
-            entry: running_entry(&self.conn)?,
-        })
+            tasks: Vec::new(),
+            active_break: None,
+        };
+        for entry in running_entries(&self.conn)? {
+            match entry.kind {
+                EntryKind::Activity => state.tasks.push(entry),
+                EntryKind::Break => state.active_break = Some(entry),
+            }
+        }
+        Ok(state)
     }
 
     pub fn work_sessions(&self, date: &str) -> Result<Vec<WorkSession>> {
@@ -26,27 +34,49 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
-    pub fn workday_summary(&self, date: &str) -> Result<WorkdaySummary> {
+    pub fn workday_summary(&self, date: &str, now: i64) -> Result<WorkdaySummary> {
         let sessions = self.work_sessions(date)?;
         let work = merge_ranges(
             sessions
                 .iter()
-                .filter_map(|session| session.ended_at.map(|end| (session.started_at, end)))
+                .map(|session| {
+                    let end = session
+                        .ended_at
+                        .unwrap_or_else(|| now.max(session.started_at));
+                    (session.started_at, end)
+                })
                 .collect(),
         );
         let totals = match (work.first(), work.last()) {
             (Some(&(start, _)), Some(&(_, end))) => {
                 let mut query = self.conn.prepare(
-                    "SELECT activity_at, end_at FROM work_entries
-                     WHERE kind = 'break' AND activity_at < ?2 AND end_at > ?1",
+                    "SELECT activity_at, COALESCE(end_at, ?3), end_at IS NOT NULL FROM work_entries
+                     WHERE kind = 'break' AND activity_at < ?2
+                       AND (end_at IS NOT NULL OR is_running = 1)
+                       AND COALESCE(end_at, ?3) > MAX(?1, activity_at)",
                 )?;
-                let rows = query.query_map([start, end], |row| Ok((row.get(0)?, row.get(1)?)))?;
-                let breaks = merge_ranges(rows.collect::<rusqlite::Result<_>>()?);
-                let break_ms = overlap_ms(&work, &breaks);
+                let rows = query.query_map([start, end, now], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, bool>(2)?,
+                    ))
+                })?;
+                let mut ranges = Vec::new();
+                let mut completed_breaks = 0;
+                for row in rows {
+                    let (start, end, finished) = row?;
+                    if finished && work.iter().any(|&(from, to)| end.min(to) > start.max(from)) {
+                        completed_breaks += 1;
+                    }
+                    ranges.push((start, end));
+                }
+                let break_ms = overlap_ms(&work, &merge_ranges(ranges));
                 let session_ms: i64 = work.iter().map(|&(start, end)| end - start).sum();
                 Some(WorkdayTotals {
                     worked_ms: session_ms - break_ms,
                     break_ms,
+                    completed_breaks,
                 })
             }
             _ => None,
@@ -118,7 +148,7 @@ impl Store {
             TrackingAction::StartDay => ensure_session(&tx, now)?,
             TrackingAction::EndDay { id } => {
                 if let Some(session) = open_session(&tx)?.filter(|session| session.id == id) {
-                    if let Some(entry) = running_entry(&tx)? {
+                    for entry in running_entries(&tx)? {
                         finish_entry(&tx, &entry, now)?;
                     }
                     tx.execute(
@@ -129,12 +159,12 @@ impl Store {
                 }
             }
             TrackingAction::StartBreak => {
-                let active = running_entry(&tx)?;
-                if !active
-                    .as_ref()
-                    .is_some_and(|entry| entry.kind == EntryKind::Break)
-                {
-                    replace_running_entry(&tx, active.as_ref(), now)?;
+                let active = running_entries(&tx)?;
+                if !active.iter().any(|entry| entry.kind == EntryKind::Break) {
+                    ensure_session(&tx, now)?;
+                    for entry in active {
+                        finish_entry(&tx, &entry, now)?;
+                    }
                     tx.execute(
                         "INSERT INTO work_entries (description, kind, activity_at, created_at, updated_at, is_running)
                          VALUES ('Break', 'break', ?1, ?1, ?1, 1)",
@@ -183,13 +213,15 @@ fn overlap_ms(work: &[(i64, i64)], breaks: &[(i64, i64)]) -> i64 {
     elapsed
 }
 
-pub(crate) fn prepare_tracking(tx: &Transaction<'_>, now: i64) -> Result<()> {
-    replace_running_entry(tx, running_entry(tx)?.as_ref(), now)
-}
-
-fn replace_running_entry(tx: &Transaction<'_>, entry: Option<&Entry>, now: i64) -> Result<()> {
+pub(crate) fn prepare_task_tracking(tx: &Transaction<'_>, now: i64) -> Result<()> {
+    let active = running_entries(tx)?;
+    if active.len() >= 2 {
+        return Err(invalid(
+            "Two tasks are already running. Stop one to start another.",
+        ));
+    }
     ensure_session(tx, now)?;
-    if let Some(entry) = entry {
+    for entry in active.iter().filter(|entry| entry.kind == EntryKind::Break) {
         finish_entry(tx, entry, now)?;
     }
     Ok(())
@@ -204,7 +236,10 @@ fn ensure_session(tx: &Transaction<'_>, now: i64) -> Result<()> {
 }
 
 fn stop_if_running(tx: &Transaction<'_>, id: i64, kind: EntryKind, now: i64) -> Result<()> {
-    if let Some(entry) = running_entry(tx)?.filter(|entry| entry.id == id && entry.kind == kind) {
+    let entry = running_entries(tx)?
+        .into_iter()
+        .find(|entry| entry.id == id && entry.kind == kind);
+    if let Some(entry) = entry {
         finish_entry(tx, &entry, now)?;
     }
     Ok(())
@@ -244,14 +279,12 @@ fn open_session(conn: &Connection) -> Result<Option<WorkSession>> {
         .optional()?)
 }
 
-fn running_entry(conn: &Connection) -> Result<Option<Entry>> {
-    Ok(conn
-        .query_row(
-            &format!("SELECT {ENTRY_COLUMNS} FROM work_entries WHERE is_running = 1"),
-            [],
-            map_entry,
-        )
-        .optional()?)
+fn running_entries(conn: &Connection) -> Result<Vec<Entry>> {
+    let mut query = conn.prepare(&format!(
+        "SELECT {ENTRY_COLUMNS} FROM work_entries WHERE is_running = 1 ORDER BY activity_at, id"
+    ))?;
+    let rows = query.query_map([], map_entry)?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
 fn map_session(row: &Row<'_>) -> rusqlite::Result<WorkSession> {

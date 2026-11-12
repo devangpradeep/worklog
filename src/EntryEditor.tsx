@@ -1,20 +1,23 @@
 import { useState, type FormEvent } from 'react'
-import { api, errorText, type Category, type Entry, type EntryKind } from './api'
-import { localDateTime, timestampFromInput } from './time'
+import { api, errorText, type Category, type Entry, type EntryKind, type TimeFormat } from './api'
+import DateTimeFields from './DateTimeFields'
+import { dateTimeInput, dateTimeInputChanged, timestampFromInput } from './time'
 import { CategoryOptions, ErrorNotice, Modal } from './ui'
 
 interface Props {
   date: string
   entry?: Entry
   categories: Category[]
+  format: TimeFormat
   detectReferences: boolean
   onDismiss: () => void
   onSaved: (entry: Entry) => void
 }
 
-export default function EntryEditor({ date, entry, categories, detectReferences, onDismiss, onSaved }: Props) {
-  const [originalTime] = useState(() => entry ? localDateTime(new Date(entry.activityAt)) : localDateTime(new Date(), date))
-  const originalEnd = entry?.endAt != null ? localDateTime(new Date(entry.endAt)) : ''
+export default function EntryEditor({ date, entry, categories, format, detectReferences, onDismiss, onSaved }: Props) {
+  const [originalTime] = useState(() => dateTimeInput(new Date(entry?.activityAt ?? Date.now()), format, entry ? undefined : date))
+  const originalEndAt = entry?.endAt ?? null
+  const originalEnd = originalEndAt === null ? null : dateTimeInput(new Date(originalEndAt), format)
   const [endAt, setEndAt] = useState(originalEnd)
   const [hasEnd, setHasEnd] = useState(!!originalEnd)
   const [kind, setKind] = useState<EntryKind>(entry?.kind ?? 'activity')
@@ -28,8 +31,9 @@ export default function EntryEditor({ date, entry, categories, detectReferences,
   const [busy, setBusy] = useState(false)
   const [discard, setDiscard] = useState(false)
   const changed = description !== (entry?.description ?? '') || categoryId !== (entry?.categoryId ?? null)
-    || kind !== (entry?.kind ?? 'activity') || endAt !== originalEnd || hasEnd !== !!originalEnd
-    || activityAt !== originalTime || prefix !== (entry?.reference?.prefix ?? '') || number !== (entry?.reference?.number ?? '')
+    || kind !== (entry?.kind ?? 'activity') || hasEnd !== !!originalEnd
+    || (hasEnd && endAt && originalEnd && dateTimeInputChanged(endAt, originalEnd))
+    || dateTimeInputChanged(activityAt, originalTime) || prefix !== (entry?.reference?.prefix ?? '') || number !== (entry?.reference?.number ?? '')
 
   function dismiss() {
     if (busy) return
@@ -43,15 +47,14 @@ export default function EntryEditor({ date, entry, categories, detectReferences,
     setError('')
     setBusy(true)
     try {
-      const timestamp = timestampFromInput(activityAt, entry?.activityAt)
+      const timestamp = timestampFromInput(activityAt, format, 'start', entry?.activityAt)
       const reference = !isBreak && (prefix.trim() || number.trim()) ? { prefix, number } : null
-      const updateEnd = hasEnd ? (endAt !== originalEnd && endAt + ':00' !== originalEnd) : !!originalEnd
-      const endTimestamp = hasEnd
-        ? timestampFromInput(endAt, entry?.endAt ?? undefined)
+      const endTimestamp = hasEnd && endAt
+        ? timestampFromInput(endAt, format, 'end', originalEndAt ?? undefined)
         : null
       const saved = await api.saveEntry(entry?.id ?? null, {
         description, categoryId: isBreak ? null : categoryId, activityAt: timestamp, endAt: endTimestamp,
-        kind, updateEnd, reference, autoReference: !isBreak && !entry && !reference,
+        kind, updateEnd: endTimestamp !== originalEndAt, reference, autoReference: !isBreak && !entry && !reference,
       })
       onSaved(saved)
     } catch (error) {
@@ -80,18 +83,19 @@ export default function EntryEditor({ date, entry, categories, detectReferences,
         <label className="field">{isBreak ? 'Break note (optional)' : 'Activity'}
           <textarea required={!isBreak} autoFocus value={description} rows={2} maxLength={4000} onChange={event => setDescription(event.target.value)} />
         </label>
-        <div className="form-grid">
-          <label className="field">Start date and time
-            <input type="datetime-local" step={1} required value={activityAt} onChange={event => setActivityAt(event.target.value)} />
-          </label>
-          {hasEnd && <label className="field">End date and time
-            <input type="datetime-local" step={1} required value={endAt} onChange={event => setEndAt(event.target.value)} />
-          </label>}
-        </div>
+        <DateTimeFields label="Start" value={activityAt} format={format} onChange={value => {
+          setActivityAt(value)
+          setError('')
+        }} />
         <label className="end-time-toggle"><input type="checkbox" checked={hasEnd} onChange={event => {
           setHasEnd(event.target.checked)
+          setError('')
           if (event.target.checked && !endAt) setEndAt(activityAt)
         }} /> Set end time</label>
+        {hasEnd && endAt && <DateTimeFields label="End" value={endAt} format={format} onChange={value => {
+          setEndAt(value)
+          setError('')
+        }} />}
         {!isBreak && <fieldset>
           <legend>Reference <span className="muted">(optional)</span></legend>
           <div className="form-grid">

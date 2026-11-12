@@ -356,21 +356,30 @@ fn tracks_workday_task_and_break_across_restart() {
         .save_entry(None, input("Noted a detail", None), None)
         .unwrap();
     assert!(!point.is_running && point.end_at.is_none());
-    assert_eq!(db.tracking_state().unwrap().entry.unwrap().id, task.id);
+    assert_eq!(db.tracking_state().unwrap().tasks[0].id, task.id);
 
     db.track(TrackingAction::StartBreak).unwrap();
-    let pause = db.tracking_state().unwrap().entry.unwrap();
+    let pause = db.tracking_state().unwrap().active_break.unwrap();
     assert_eq!(pause.kind, EntryKind::Break);
     assert_eq!(db.entry(task.id).unwrap().end_at, Some(pause.activity_at));
     db.track(TrackingAction::StartBreak).unwrap();
-    assert_eq!(db.tracking_state().unwrap().entry.unwrap().id, pause.id);
+    assert_eq!(
+        db.tracking_state().unwrap().active_break.unwrap().id,
+        pause.id
+    );
     db.start_task(input("Retry same capture", None), key)
         .unwrap();
-    assert_eq!(db.tracking_state().unwrap().entry.unwrap().id, pause.id);
+    assert_eq!(
+        db.tracking_state().unwrap().active_break.unwrap().id,
+        pause.id
+    );
     drop(db);
 
     let mut db = Store::open(&path).unwrap();
-    assert_eq!(db.tracking_state().unwrap().entry.unwrap().id, pause.id);
+    assert_eq!(
+        db.tracking_state().unwrap().active_break.unwrap().id,
+        pause.id
+    );
     db.track(TrackingAction::EndBreak { id: pause.id }).unwrap();
     assert!(db.entry(pause.id).unwrap().end_at.is_some());
     let task = db
@@ -383,7 +392,7 @@ fn tracks_workday_task_and_break_across_restart() {
     assert!(db.entry(task.id).unwrap().is_running);
     db.track(TrackingAction::EndDay { id: session.id }).unwrap();
     let status = db.tracking_state().unwrap();
-    assert!(status.session.is_none() && status.entry.is_none());
+    assert!(status.session.is_none() && status.tasks.is_empty() && status.active_break.is_none());
     let day = local_date(session.started_at).unwrap();
     let history = db.work_sessions(&day).unwrap();
     assert_eq!(history.len(), 1);
@@ -516,13 +525,14 @@ fn workday_totals_subtract_only_the_union_of_breaks_inside_finished_sessions() {
         db.save_entry(None, pause, None).unwrap();
     }
 
-    let summary = db.workday_summary(date).unwrap();
+    let summary = db.workday_summary(date, at(1050)).unwrap();
     assert_eq!(summary.sessions.len(), 4);
     assert_eq!(
         summary.totals,
         Some(WorkdayTotals {
             worked_ms: 395 * 60_000,
             break_ms: 55 * 60_000,
+            completed_breaks: 3,
         })
     );
 }
@@ -547,11 +557,142 @@ fn overnight_work_and_breaks_count_on_the_session_start_date() {
     db.save_entry(None, pause, None).unwrap();
 
     assert_eq!(
-        db.workday_summary(date).unwrap().totals,
+        db.workday_summary(date, midnight + 3 * hour)
+            .unwrap()
+            .totals,
         Some(WorkdayTotals {
             worked_ms: 2 * hour,
             break_ms: hour,
+            completed_breaks: 1,
         })
     );
-    assert!(db.workday_summary("2026-07-16").unwrap().totals.is_none());
+    assert!(db
+        .workday_summary("2026-07-16", midnight + 3 * hour)
+        .unwrap()
+        .totals
+        .is_none());
+}
+
+#[test]
+fn live_workday_totals_advance_and_pause_during_a_running_break() {
+    use crate::{EntryKind, WorkdayTotals};
+
+    let mut db = database();
+    let date = "2026-07-15";
+    let start = day_bounds(date).unwrap().0;
+    let at = |minute: i64| start + minute * 60_000;
+    db.conn
+        .execute(
+            "INSERT INTO work_sessions (started_at) VALUES (?1)",
+            [at(540)],
+        )
+        .unwrap();
+    let mut pause = input("Recorded break", Some(at(600)));
+    pause.kind = EntryKind::Break;
+    pause.end_at = Some(at(615));
+    db.save_entry(None, pause, None).unwrap();
+    db.conn.execute(
+        "INSERT INTO work_entries (description, kind, activity_at, created_at, updated_at, is_running)
+         VALUES ('Running break', 'break', ?1, ?1, ?1, 1)",
+        [at(710)],
+    ).unwrap();
+
+    for (minute, worked, on_break, completed) in [
+        (530, 0, 0, 0),
+        (700, 145, 15, 1),
+        (720, 155, 25, 1),
+        (735, 155, 40, 1),
+    ] {
+        assert_eq!(
+            db.workday_summary(date, at(minute)).unwrap().totals,
+            Some(WorkdayTotals {
+                worked_ms: worked * 60_000,
+                break_ms: on_break * 60_000,
+                completed_breaks: completed,
+            })
+        );
+    }
+}
+
+#[test]
+fn upgrades_an_active_task_and_manages_two_independent_timers() {
+    use crate::TrackingAction;
+
+    let conn = Connection::open_in_memory().unwrap();
+    for migration in &MIGRATIONS[..3] {
+        conn.execute_batch(migration).unwrap();
+    }
+    conn.pragma_update(None, "application_id", APPLICATION_ID)
+        .unwrap();
+    conn.pragma_update(None, "user_version", 3).unwrap();
+    let start = Utc::now().timestamp_millis() - 60_000;
+    conn.execute(
+        "INSERT INTO work_sessions (started_at) VALUES (?1)",
+        [start],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO work_entries (description, activity_at, created_at, updated_at, is_running)
+         VALUES ('Existing task', ?1, ?1, ?1, 1)",
+        [start],
+    )
+    .unwrap();
+
+    let mut db = Store::initialize(conn).unwrap();
+    let original = db.tracking_state().unwrap().tasks.pop().unwrap();
+    let second_key = "bb03391bf1424c8da34c416d17bd7cac";
+    let second = db
+        .start_task(input("Second task", None), second_key)
+        .unwrap();
+    assert!(db.entry(original.id).unwrap().is_running);
+    assert_eq!(db.tracking_state().unwrap().tasks.len(), 2);
+    assert_eq!(
+        db.start_task(input("Retry second", None), second_key)
+            .unwrap()
+            .id,
+        second.id
+    );
+    assert!(db
+        .start_task(
+            input("Third task", None),
+            "a373d46ed6884dbfb73cae16bda579d7"
+        )
+        .is_err());
+
+    db.track(TrackingAction::StopTask { id: original.id })
+        .unwrap();
+    assert!(db.entry(original.id).unwrap().end_at.is_some());
+    assert!(db.entry(second.id).unwrap().is_running);
+    let next = db
+        .start_task(
+            input("New parallel task", None),
+            "a373d46ed6884dbfb73cae16bda579d7",
+        )
+        .unwrap();
+    db.track(TrackingAction::StartBreak).unwrap();
+    let pause = db.tracking_state().unwrap().active_break.unwrap();
+    assert_eq!(db.entry(second.id).unwrap().end_at, Some(pause.activity_at));
+    assert_eq!(db.entry(next.id).unwrap().end_at, Some(pause.activity_at));
+
+    let first = db
+        .start_task(
+            input("Resume work", None),
+            "d2c751626eed443b89f2424565f75ec5",
+        )
+        .unwrap();
+    assert_eq!(db.entry(pause.id).unwrap().end_at, Some(first.activity_at));
+    let second = db
+        .start_task(
+            input("Another task", None),
+            "f7ac216ad7db4f1ea65c72ed75bf214d",
+        )
+        .unwrap();
+    let session = db.tracking_state().unwrap().session.unwrap();
+    db.track(TrackingAction::EndDay { id: session.id }).unwrap();
+    assert_eq!(
+        db.entry(first.id).unwrap().end_at,
+        db.entry(second.id).unwrap().end_at
+    );
+    assert!(db.entry(first.id).unwrap().end_at.is_some());
+    assert!(db.tracking_state().unwrap().tasks.is_empty());
 }

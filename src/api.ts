@@ -82,12 +82,13 @@ export interface WorkSession {
 
 export interface WorkdaySummary {
   sessions: WorkSession[]
-  totals: { workedMs: number; breakMs: number } | null
+  totals: { workedMs: number; breakMs: number; completedBreaks: number } | null
 }
 
 export interface TrackingState {
   session: WorkSession | null
-  entry: Entry | null
+  tasks: Entry[]
+  activeBreak: Entry | null
 }
 
 export interface EntryQuery {

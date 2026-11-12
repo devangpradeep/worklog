@@ -17,6 +17,7 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/001_initial.sql"),
     include_str!("../migrations/002_capture_and_reminders.sql"),
     include_str!("../migrations/003_workday_tracking.sql"),
+    include_str!("../migrations/004_parallel_tasks.sql"),
 ];
 pub(crate) const ENTRY_COLUMNS: &str = "id, description, reference_type, reference_number,
     category_id, activity_at, created_at, updated_at, end_at, kind, is_running";
@@ -316,7 +317,7 @@ impl Store {
             previous.id
         } else {
             if start_task {
-                crate::tracking::prepare_tracking(&tx, now)?;
+                crate::tracking::prepare_task_tracking(&tx, now)?;
             }
             tx.execute(
                 "INSERT INTO work_entries (description, reference_type, reference_number, category_id,
