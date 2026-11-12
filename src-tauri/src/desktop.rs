@@ -16,7 +16,7 @@ use tauri::{
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
-use worklog_core::{EntryKind, Settings, Store, Theme, TrackingAction};
+use worklog_core::{Settings, Store, Theme, TrackingAction};
 
 pub struct Desktop {
     pub path: PathBuf,
@@ -271,6 +271,7 @@ fn validate_shortcut(value: &str) -> Result<(), String> {
 
 struct TrayTracking {
     day: MenuItem<tauri::Wry>,
+    start_task: MenuItem<tauri::Wry>,
     stop_task: MenuItem<tauri::Wry>,
     pause: MenuItem<tauri::Wry>,
 }
@@ -318,6 +319,7 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
         .build(app)?;
     app.manage(TrayTracking {
         day,
+        start_task: task,
         stop_task,
         pause,
     });
@@ -336,17 +338,18 @@ fn track_from_tray(app: &AppHandle, id: &str) {
                     TrackingAction::EndDay { id: session.id }
                 }),
                 "break" => state
-                    .entry
-                    .filter(|entry| entry.kind == EntryKind::Break)
+                    .active_break
                     .map_or(TrackingAction::StartBreak, |entry| {
                         TrackingAction::EndBreak { id: entry.id }
                     }),
-                _ => match state
-                    .entry
-                    .filter(|entry| entry.kind == EntryKind::Activity)
-                {
-                    Some(entry) => TrackingAction::StopTask { id: entry.id },
-                    None => return Ok(()),
+                _ => match state.tasks.as_slice() {
+                    [task] => TrackingAction::StopTask { id: task.id },
+                    [] => return Ok(()),
+                    _ => {
+                        drop(db);
+                        show_capture(app);
+                        return Ok(());
+                    }
                 },
             };
         db.track(action).map_err(|error| error.to_string())
@@ -384,11 +387,20 @@ fn refresh_tracking_menu(app: &AppHandle) {
     } else {
         "Start day"
     });
-    let kind = state.entry.map(|entry| entry.kind);
-    let _ = menu
-        .stop_task
-        .set_enabled(kind == Some(EntryKind::Activity));
-    let _ = menu.pause.set_text(if kind == Some(EntryKind::Break) {
+    let task_count = state.tasks.len();
+    let _ = menu.start_task.set_enabled(task_count < 2);
+    let _ = menu.start_task.set_text(match task_count {
+        0 => "Start task…",
+        1 => "Start second task…",
+        _ => "Two tasks running",
+    });
+    let _ = menu.stop_task.set_enabled(task_count > 0);
+    let _ = menu.stop_task.set_text(if task_count > 1 {
+        "Manage running tasks…"
+    } else {
+        "Stop task"
+    });
+    let _ = menu.pause.set_text(if state.active_break.is_some() {
         "End break"
     } else {
         "Take break"

@@ -46,7 +46,7 @@ export default function Calendar({ date, today, revision, onPick }: Props) {
     <section className="calendar" aria-label="Journal calendar">
       <div className="calendar-title">
         <h2>{formatDay(month + '-01', { month: 'long', year: 'numeric' })}</h2>
-        <div className="flex gap-0.5">
+        <div className="flex shrink-0 gap-0.5">
           <button className="icon-button calendar-arrow" aria-label="Previous month" onClick={() => shiftMonth(-1)}><ChevronLeft size={15} /></button>
           <button className="icon-button calendar-arrow" aria-label="Next month" onClick={() => shiftMonth(1)}><ChevronRight size={15} /></button>
         </div>

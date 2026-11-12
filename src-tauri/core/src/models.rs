@@ -236,13 +236,15 @@ pub struct WorkdaySummary {
 pub struct WorkdayTotals {
     pub worked_ms: i64,
     pub break_ms: i64,
+    pub completed_breaks: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrackingState {
     pub session: Option<WorkSession>,
-    pub entry: Option<Entry>,
+    pub tasks: Vec<Entry>,
+    pub active_break: Option<Entry>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]

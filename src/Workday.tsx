@@ -1,5 +1,5 @@
 import { Coffee, Pencil, Play, Square, Sun, Trash2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { api, errorText, type TimeFormat, type TrackingAction, type TrackingState, type WorkdaySummary, type WorkSession } from './api'
 import { formatDuration, formatRelativeTime } from './time'
 import { ErrorNotice } from './ui'
@@ -8,39 +8,25 @@ import WorkSessionDialog from './WorkSessionDialog'
 interface Props {
   date: string
   today: string
-  revision: number
+  summary?: WorkdaySummary
+  readError?: string
   tracking?: TrackingState
   format: TimeFormat
   onStartTask: () => void
 }
 
-export default function Workday({ date, today, revision, tracking, format, onStartTask }: Props) {
-  const [history, setHistory] = useState<{ date: string; summary: WorkdaySummary }>()
-  const [readError, setReadError] = useState('')
+export default function Workday({ date, today, summary, readError, tracking, format, onStartTask }: Props) {
   const [actionError, setActionError] = useState('')
   const [busy, setBusy] = useState(false)
   const [dialog, setDialog] = useState<{ session: WorkSession; mode: 'edit' | 'delete' }>()
   const isToday = date === today
   const session = tracking?.session
-  const entry = tracking?.entry
-  const summary = history?.date === date ? history.summary : undefined
+  const tasks = tracking?.tasks ?? []
+  const activeBreak = tracking?.activeBreak
   const sessions = summary?.sessions ?? []
   const totals = summary?.totals
   const time = (value: number) => formatRelativeTime(value, date, format)
   const sessionHistory = sessions.filter(item => !isToday || item.endedAt !== null)
-
-  useEffect(() => {
-    let active = true
-    void api.workdaySummary(date).then(summary => {
-      if (active) {
-        setHistory({ date, summary })
-        setReadError('')
-      }
-    }).catch(error => {
-      if (active) setReadError(errorText(error))
-    })
-    return () => { active = false }
-  }, [date, revision])
 
   async function track(action: TrackingAction) {
     if (busy) return
@@ -68,23 +54,33 @@ export default function Workday({ date, today, revision, tracking, format, onSta
             <button type="button" className="icon-button session-action" aria-label="Edit running work session" title="Edit start time"
               onClick={() => setDialog({ session, mode: 'edit' })}><Pencil size={14} /></button>
           </div>}
-          {isToday && entry && <p className="workday-active" title={entry.description}>
-            {entry.kind === 'break' ? 'On break' : entry.description} · Since {time(entry.activityAt)}
-          </p>}
+          {isToday && activeBreak && <p>On break · Since {time(activeBreak.activityAt)}</p>}
         </div>
       </div>
       {isToday && <div className="workday-actions">
         {session
           ? <button className="button secondary" disabled={busy} onClick={() => void track({ kind: 'endDay', id: session.id })}><Square size={14} /> End day</button>
           : <button className="button primary" disabled={busy || !tracking} onClick={() => void track({ kind: 'startDay' })}><Sun size={15} /> Start day</button>}
-        <button className={'button ' + (session && !entry ? 'primary' : 'secondary')} disabled={busy || !tracking} onClick={onStartTask}><Play size={15} /> Start task</button>
-        {entry?.kind === 'activity' && <button className="button secondary" disabled={busy} onClick={() => void track({ kind: 'stopTask', id: entry.id })}><Square size={14} /> Stop task</button>}
-        {entry?.kind === 'break'
-          ? <button className="button secondary" disabled={busy} onClick={() => void track({ kind: 'endBreak', id: entry.id })}><Coffee size={16} /> End break</button>
-          : <button className="button secondary" disabled={busy || !tracking} onClick={() => void track({ kind: 'startBreak' })}><Coffee size={16} /> Take break</button>}
+        {tasks.length < 2 && <button className={'button ' + (session && tasks.length === 0 && !activeBreak ? 'primary' : 'secondary')}
+          disabled={busy || !tracking} onClick={onStartTask}><Play size={15} /> {tasks.length === 1 ? 'Start second task' : 'Start task'}</button>}
+        {activeBreak
+          ? <button className="button secondary" disabled={busy} onClick={() => void track({ kind: 'endBreak', id: activeBreak.id })}><Coffee size={16} /> End break</button>
+          : <button className="button secondary" disabled={busy || !tracking} title={tasks.length ? 'Stop running tasks and start a break' : undefined}
+            onClick={() => void track({ kind: 'startBreak' })}><Coffee size={16} /> Take break</button>}
       </div>}
     </div>
-    {totals && <dl className="workday-totals" aria-label="Completed workday totals">
+    {isToday && tasks.length > 0 && <ul className="workday-tasks" aria-label="Running tasks">
+      {tasks.map(task => <li key={task.id}>
+        <span className="tracking-dot" data-state="activity" aria-hidden="true" />
+        <div className="workday-task-label">
+          <strong title={task.description}>{task.description}</strong>
+          <span>Running since {time(task.activityAt)}</span>
+        </div>
+        <button type="button" className="button secondary" disabled={busy} aria-label={'Stop task: ' + task.description}
+          onClick={() => void track({ kind: 'stopTask', id: task.id })}><Square size={14} /> Stop task</button>
+      </li>)}
+    </ul>}
+    {totals && <dl className="workday-totals" aria-label="Workday totals">
       <div>
         <dt>Time worked</dt>
         <dd>{formatDuration(totals.workedMs)}</dd>
@@ -111,6 +107,6 @@ export default function Workday({ date, today, revision, tracking, format, onSta
       })}
     </ul>}
     {(actionError || readError) && <ErrorNotice>{actionError || readError}</ErrorNotice>}
-    {dialog && <WorkSessionDialog {...dialog} formatTime={time} onDismiss={() => setDialog(undefined)} />}
+    {dialog && <WorkSessionDialog {...dialog} format={format} formatTime={time} onDismiss={() => setDialog(undefined)} />}
   </section>
 }

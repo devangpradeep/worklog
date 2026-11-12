@@ -1,26 +1,38 @@
 import {
-  BookOpen, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Coffee,
-  Database, ListFilter, NotebookPen, Pencil, Plus, Search, Settings2, Trash2, X,
+  BookOpen, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3,
+  Database, ListFilter, NotebookPen, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings2, X,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { api, errorText, type CaptureMode, type Category, type Entry, type Review, type ReviewAction, type TimeFormat } from './api'
+import { api, errorText, type CaptureMode, type Entry, type Review, type ReviewAction } from './api'
 import Calendar from './Calendar'
 import EntryEditor, { DeleteEntry } from './EntryEditor'
-import { useData, useNativeEvent, useToday } from './hooks'
+import { useData, useNativeEvent, useToday, useWorkdaySummary } from './hooks'
+import JournalEntries from './JournalEntries'
 import ReviewPanel from './ReviewPanel'
 import SettingsScreen from './SettingsScreen'
-import { formatDay, formatRelativeTime, formatTime, localDay, shiftDay } from './time'
+import { formatDay, formatDuration, localDay, shiftDay } from './time'
 import Workday from './Workday'
 import { Brand, ErrorNotice, SuccessNotice } from './ui'
+
+// Keep the saved preference from the calendar toggle.
+const sidebarCollapsedKey = 'worklog.calendar.collapsed'
 
 export default function Dashboard() {
   const { snapshot, revision, error: dataError, refresh } = useData()
   const today = useToday()
   const [date, setDate] = useState(today)
   const [page, setPage] = useState<'journal' | 'settings'>('journal')
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(sidebarCollapsedKey) === 'true'
+    } catch {
+      return false
+    }
+  })
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
+  const [byActivity, setByActivity] = useState(false)
   const [result, setResult] = useState<{ key: string; entries: Entry[] }>()
   const [review, setReview] = useState<Review>()
   const [reviewMode, setReviewMode] = useState(false)
@@ -37,9 +49,24 @@ export default function Dashboard() {
   const scroll = useRef<HTMLElement>(null)
 
   const searchActive = !!search.trim()
+  const showWorkday = page === 'journal' && !searchActive
+  const runningSession = snapshot?.tracking.session
+  const liveWorkday = !!runningSession && localDay(new Date(runningSession.startedAt)) === date
+  const workday = useWorkdaySummary(date, revision, showWorkday, liveWorkday)
+  const workedMs = workday?.summary?.totals?.workedMs
   const changedDay = date !== today
   const queryKey = JSON.stringify([query ? null : date, query, category])
   const entries = result?.key === queryKey ? result.entries : []
+
+  function toggleSidebar() {
+    const collapsed = !sidebarCollapsed
+    setSidebarCollapsed(collapsed)
+    try {
+      localStorage.setItem(sidebarCollapsedKey, String(collapsed))
+    } catch {
+      // The sidebar remains collapsible for the current window.
+    }
+  }
 
   function pickDate(day: string, expand = false) {
     setPage('journal')
@@ -170,8 +197,8 @@ export default function Dashboard() {
   const showEntries = !entryError && result?.key === queryKey && searchActive === !!query
 
   return (
-    <div className="app-layout">
-      <aside className="sidebar">
+    <div className="app-layout" data-sidebar-collapsed={sidebarCollapsed || undefined}>
+      <aside id="dashboard-sidebar" className="sidebar" hidden={sidebarCollapsed}>
         <div className="wordmark"><Brand /><span>WorkLog</span></div>
         <nav aria-label="Workspace" className="side-navigation">
           <button className="nav-button" aria-current={page === 'journal' ? 'page' : undefined} onClick={() => setPage('journal')}><BookOpen size={17} /> Journal</button>
@@ -185,7 +212,18 @@ export default function Dashboard() {
 
       <div className="workspace">
         <header className="toolbar">
-          <div className="toolbar-location">{page === 'journal' ? <BookOpen size={16} /> : <Settings2 size={16} />} {page === 'journal' ? 'Journal' : 'Settings'}</div>
+          <div className="toolbar-location">
+            <button type="button" className="icon-button" aria-controls="dashboard-sidebar" aria-expanded={!sidebarCollapsed}
+              aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={toggleSidebar}>
+              {sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+            </button>
+            <span>{page === 'journal' ? 'Journal' : 'Settings'}</span>
+          </div>
+          {showWorkday && workedMs !== undefined && <div className="toolbar-worked" title="Work sessions minus recorded breaks">
+            <Clock3 size={15} aria-hidden="true" />
+            <span><strong>{formatDuration(workedMs)}</strong> worked</span>
+          </div>}
           {page === 'journal' && <div className="search-field">
             <Search size={17} />
             <input ref={searchInput} type="search" placeholder="Search activities…" aria-label="Search activities" value={search}
@@ -220,7 +258,7 @@ export default function Dashboard() {
                 </div>}
               </div>
 
-              {!searchActive && <Workday date={date} today={today} revision={revision}
+              {!searchActive && <Workday date={date} today={today} summary={workday?.summary} readError={workday?.error}
                 format={timeFormat} tracking={snapshot?.tracking} onStartTask={() => void openCapture('task')} />}
 
               <div className={'journal-grid' + (searchActive ? ' search-view' : '')}>
@@ -232,6 +270,10 @@ export default function Dashboard() {
                       {showEntries && <span className="count">{entries.length}</span>}
                     </div>
                     <div className="timeline-controls">
+                      {!searchActive && <div className="timeline-view" role="group" aria-label="Timeline view">
+                        <button type="button" aria-pressed={!byActivity} onClick={() => setByActivity(false)}>Time order</button>
+                        <button type="button" aria-pressed={byActivity} onClick={() => setByActivity(true)}>By activity</button>
+                      </div>}
                       <label className="filter-control">
                         <ListFilter size={15} />
                         <span className="sr-only">Filter by category</span>
@@ -255,18 +297,9 @@ export default function Dashboard() {
                       {!searchActive && category === 'all' && <button className="button secondary" disabled={!snapshot} onClick={() => setEditor({ date })}><Plus size={16} /> Add activity</button>}
                     </div>
                   )}
-                  {showEntries && entries.length > 0 && <ol className="timeline-list">
-                    {entries.map((entry, index) => {
-                      const entryDay = localDay(new Date(entry.activityAt))
-                      const previous = entries[index - 1]
-                      const group = searchActive && (!previous || localDay(new Date(previous.activityAt)) !== entryDay)
-                      return <li key={entry.id} className="entry-item">
-                        {group && <button className="entry-day" onClick={() => pickDate(entryDay)}>{formatDay(entryDay, { dateStyle: 'full' })}<ChevronRight size={14} /></button>}
-                        <EntryRow entry={entry} category={categories.find(item => item.id === entry.categoryId)} format={timeFormat}
-                          onEdit={() => setEditor({ date: entryDay, entry })} onDelete={() => setDeleteEntry(entry)} />
-                      </li>
-                    })}
-                  </ol>}
+                  {showEntries && entries.length > 0 && <JournalEntries key={date} entries={entries} categories={categories} format={timeFormat}
+                    byActivity={byActivity && !searchActive} searchActive={searchActive} onPickDate={pickDate}
+                    onEdit={entry => setEditor({ date: localDay(new Date(entry.activityAt)), entry })} onDelete={setDeleteEntry} />}
                 </section>
                 {!searchActive && <div className="review-column">
                   {currentReview?.status === 'reviewed' && <span className="status-tag reviewed"><CheckCircle2 size={14} /> Reviewed</span>}
@@ -283,7 +316,7 @@ export default function Dashboard() {
         </main>
       </div>
 
-      {snapshot && editor && <EntryEditor date={editor.date} entry={editor.entry} categories={categories}
+      {snapshot && editor && <EntryEditor date={editor.date} entry={editor.entry} categories={categories} format={timeFormat}
         detectReferences={snapshot.settings.detectReferences} onDismiss={() => setEditor(undefined)}
         onSaved={saved => {
           setEditor(undefined)
@@ -299,37 +332,5 @@ export default function Dashboard() {
       }} />}
       {notice && <div className="toast"><SuccessNotice>{notice}</SuccessNotice></div>}
     </div>
-  )
-}
-
-function EntryRow({ entry, category, format, onEdit, onDelete }: {
-  entry: Entry
-  category?: Category
-  format: TimeFormat
-  onEdit: () => void
-  onDelete: () => void
-}) {
-  return (
-    <article className="entry-row" data-kind={entry.kind}>
-      <div className="entry-times">
-        <time dateTime={new Date(entry.activityAt).toISOString()}>{formatTime(entry.activityAt, format)}</time>
-        {entry.endAt !== null && <time className="entry-end" dateTime={new Date(entry.endAt).toISOString()}>
-          <span className="sr-only">Ends at </span>{formatRelativeTime(entry.endAt, localDay(new Date(entry.activityAt)), format)}
-        </time>}
-      </div>
-      <div className="entry-marker" aria-hidden="true"><span style={category ? { backgroundColor: category.color } : undefined} /></div>
-      <div className="entry-content">
-        <p className="entry-description">{entry.kind === 'break' && <Coffee size={15} aria-label="Break" />}{entry.description}</p>
-        {(category || entry.reference || entry.isRunning) && <div className="entry-tags">
-          {entry.isRunning && <span className="reference-tag">{entry.kind === 'break' ? 'On break' : 'Running'}</span>}
-          {category && <span className="category-tag"><span style={{ backgroundColor: category.color }} />{category.name}</span>}
-          {entry.reference && <span className="reference-tag">{entry.reference.prefix} {entry.reference.number}</span>}
-        </div>}
-      </div>
-      <div className="entry-actions">
-        <button className="icon-button" aria-label="Edit activity" title="Edit activity" onClick={onEdit}><Pencil size={15} /></button>
-        <button className="icon-button delete-button" aria-label="Delete activity" title="Delete activity" onClick={onDelete}><Trash2 size={15} /></button>
-      </div>
-    </article>
   )
 }

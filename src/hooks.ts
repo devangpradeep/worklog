@@ -1,6 +1,6 @@
 import { listen } from '@tauri-apps/api/event'
 import { useEffect, useRef, useState } from 'react'
-import { api, errorText, type Snapshot } from './api'
+import { api, errorText, type Snapshot, type WorkdaySummary } from './api'
 import { localDay } from './time'
 
 export function useNativeEvent<T = unknown>(event: string, callback: (payload: T) => void, ready?: () => void) {
@@ -61,4 +61,41 @@ export function useToday() {
     }
   }, [])
   return today
+}
+
+export function useWorkdaySummary(date: string, revision: number, enabled: boolean, live: boolean) {
+  const [result, setResult] = useState<{ date: string; summary?: WorkdaySummary; error?: string }>()
+
+  useEffect(() => {
+    if (!enabled) return
+    let active = true
+    let pending = false
+
+    async function load() {
+      if (pending) return
+      pending = true
+      try {
+        const summary = await api.workdaySummary(date)
+        if (active) setResult({ date, summary })
+      } catch (error) {
+        if (active) setResult({ date, error: errorText(error) })
+      } finally {
+        pending = false
+      }
+    }
+
+    void load()
+    const timer = live ? window.setInterval(() => {
+      if (!document.hidden) void load()
+    }, 5_000) : undefined
+    if (live) window.addEventListener('focus', load)
+
+    return () => {
+      active = false
+      window.clearInterval(timer)
+      window.removeEventListener('focus', load)
+    }
+  }, [date, revision, enabled, live])
+
+  return result?.date === date ? result : undefined
 }
