@@ -88,6 +88,10 @@ export default function Dashboard() {
   }, [today])
 
   useEffect(() => {
+    scroll.current?.scrollTo({ top: 0 })
+  }, [page])
+
+  useEffect(() => {
     const timer = window.setTimeout(() => setQuery(search.trim()), 160)
     return () => window.clearTimeout(timer)
   }, [search])
@@ -191,7 +195,7 @@ export default function Dashboard() {
           </div>}
           <button className="button primary toolbar-add" onClick={() => void openCapture()} title="Quick Add (Ctrl+N)"><Plus size={18} /> Quick Add</button>
         </header>
-        <main className="workspace-scroll" ref={scroll}>
+        <main className="workspace-scroll" ref={scroll} tabIndex={0} aria-label={page === 'journal' ? 'Journal' : 'Settings'}>
           <div className="page-content">
             {(dataError || actionError) && <ErrorNotice>
               {dataError || actionError} <button className="text-button" onClick={() => { refresh(); setActionError('') }}>Retry</button>

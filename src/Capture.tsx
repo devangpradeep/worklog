@@ -1,8 +1,9 @@
-import { Check, CornerDownLeft, X } from 'lucide-react'
+import { ArrowLeft, Check, CornerDownLeft, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { api, errorText, type CaptureContext, type CaptureMode } from './api'
+import { api, errorText, type CaptureContext, type CaptureMode, type TrackingAction } from './api'
 import { useData, useNativeEvent } from './hooks'
 import { Brand, CategoryOptions } from './ui'
+import CaptureTracking from './CaptureTracking'
 
 interface Draft {
   description: string
@@ -40,6 +41,8 @@ export default function Capture() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [changingTracking, setChangingTracking] = useState(false)
+  const controlsDisabled = !context || busy || saved || changingTracking
   const running = useRef(false)
   const input = useRef<HTMLInputElement>(null)
   const timer = useRef<number | undefined>(undefined)
@@ -94,9 +97,23 @@ export default function Capture() {
     }
   }
 
+  async function runControl(action: () => Promise<void>) {
+    if (controlsDisabled || running.current) return
+    setChangingTracking(true)
+    setError('')
+    try {
+      await action()
+    } catch (error) {
+      setError(errorText(error))
+    } finally {
+      setChangingTracking(false)
+      input.current?.focus()
+    }
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault()
-    if (!context || !settings || !draft.description.trim() || running.current || saved) return
+    if (!context || !settings || !draft.description.trim() || running.current || saved || changingTracking) return
     running.current = true
     setBusy(true)
     setError('')
@@ -136,7 +153,11 @@ export default function Capture() {
       <header className="capture-header">
         <Brand small />
         <h1>{taskMode ? 'Start task' : 'Quick Capture'}</h1>
-        <button type="button" className="icon-button ml-auto" aria-label="Dismiss Quick Capture" title="Dismiss (Esc)" onClick={() => void dismiss()}><X size={17} /></button>
+        <div className="capture-header-actions">
+          {taskMode && <button type="button" className="button capture-back" disabled={controlsDisabled}
+            onClick={() => void runControl(() => api.openCapture('quick'))}><ArrowLeft size={14} /> Log activity</button>}
+          <button type="button" className="icon-button" aria-label="Dismiss Quick Capture" title="Dismiss (Esc)" onClick={() => void dismiss()}><X size={17} /></button>
+        </div>
       </header>
       <form className="capture-form" onSubmit={submit}>
         <div className="flex items-stretch gap-2">
@@ -152,7 +173,7 @@ export default function Capture() {
               update({ description: event.target.value, categoryId: draft.categoryId })
             }}
           />
-          <button className="button primary capture-save" disabled={!context || !settings || !draft.description.trim() || busy || saved}>
+          <button className="button primary capture-save" disabled={controlsDisabled || !settings || !draft.description.trim()}>
             {saved ? <Check size={16} /> : <CornerDownLeft size={16} />}
             {saved ? (taskMode ? 'Started' : 'Saved') : busy ? 'Saving' : taskMode ? 'Start' : 'Save'}
           </button>
@@ -168,10 +189,17 @@ export default function Capture() {
           <span className="capture-hint"><kbd>Enter</kbd> to {taskMode ? 'start' : 'save'} <span aria-hidden="true">·</span> <kbd>Esc</kbd> to hide</span>
         </div>
         {saved && <span className="sr-only" role="status">{taskMode ? 'Task started' : 'Activity saved'}</span>}
-        {(error || dataError) && <div className="capture-error" role="alert">
-          {error || dataError} {dataError && <button type="button" onClick={refresh}>Retry</button>}
-        </div>}
       </form>
+      {snapshot && <CaptureTracking
+        tracking={snapshot.tracking}
+        format={snapshot.settings.timeFormat}
+        disabled={controlsDisabled}
+        onAction={(action: TrackingAction) => void runControl(() => api.track(action))}
+        onStartTask={taskMode ? undefined : () => void runControl(() => api.openCapture('task'))}
+      />}
+      {(error || dataError) && <div className="capture-error" role="alert">
+        {error || dataError} {dataError && <button type="button" onClick={refresh}>Retry</button>}
+      </div>}
     </main>
   )
 }
