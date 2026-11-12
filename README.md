@@ -35,10 +35,10 @@ npm run tauri build -- --bundles deb
 
 Tauri writes the package under `src-tauri/target/release/bundle/deb/`. Build on Ubuntu 24.04 for your target architecture. [Tauri Debian packaging](https://v2.tauri.app/distribute/debian/)
 
-For the 0.2.2 amd64 build, run the following from the repository root. If you are upgrading, choose **Quit WorkLog** from the tray first.
+For the 0.2.5 amd64 build, run the following from the repository root. If you are upgrading, choose **Quit WorkLog** from the tray first.
 
 ```bash
-sudo apt install ./src-tauri/target/release/bundle/deb/WorkLog_0.2.2_amd64.deb
+sudo apt install ./src-tauri/target/release/bundle/deb/WorkLog_0.2.5_amd64.deb
 ```
 
 Open **WorkLog** from Applications or run `worklog` in a terminal.
@@ -51,6 +51,8 @@ Open **WorkLog** from Applications or run `worklog` in a terminal.
 4. Select **Review day** to write a note and mark the day reviewed. Use **Reopen day** when you want to return to it.
 
 **Time worked** totals finished sessions that started on the selected date, subtracting the recorded breaks within them. Overlapping time counts once. Overnight sessions appear on the date they started.
+
+Quick Capture shows the current workday and task below the entry field. Use **Start day** or **End day** to manage the session, and **Start task** or **Stop task** to manage the current task. With a workday open and no task running, choose **Take break**. The control switches to **End break** until the break is finished.
 
 In the dashboard, **Ctrl+N** opens Quick Capture and **Ctrl+F** focuses journal search. Closing the dashboard hides it by default. Change **Minimize to tray** in Settings to use the dock, or select **Quit WorkLog** to stop the app.
 
@@ -83,6 +85,7 @@ The test suite covers journal entries, workday totals, reviews, reminders, datab
 - [ ] Launch the installed app and confirm that today’s timeline opens. Try Quick Capture from the tray, Applications launcher, and desktop shortcut. Verify that a second launch opens the existing app.
 - [ ] Enter `NCR 2456 - Tested the issue` in Quick Capture and press Enter twice. Verify that one entry is saved with its reference. Confirm that an unsaved draft survives **Esc**.
 - [ ] Start and stop a task, take a break, and end the day. Check the net work total, then edit the session and verify that the total updates. Try adding a past activity and break.
+- [ ] Shrink the dashboard and scroll a long timeline with the mouse wheel and keyboard. Check that the toolbar stays visible.
 - [ ] Search and filter the journal, edit categories, and review a day. Confirm that a later edit flags the day for review.
 - [ ] Check theme, time format, tray behavior, and launch at login. Send a test notification, then schedule a review reminder to verify its dashboard and snooze actions.
 - [ ] Back up the journal, export entries to CSV, and try cancelling and confirming a restore with test data.
