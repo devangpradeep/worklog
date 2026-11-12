@@ -1,0 +1,20 @@
+[Desktop Entry]
+Name={{name}}
+Comment=Record and review daily work
+Exec={{exec}}
+Icon={{icon}}
+Terminal=false
+Type=Application
+Categories=Office;
+Keywords=journal;work;log;activity;
+StartupNotify=true
+StartupWMClass=Worklog
+Actions=QuickAdd;Settings;
+
+[Desktop Action QuickAdd]
+Name=Quick Add
+Exec={{exec}} --quick-add
+
+[Desktop Action Settings]
+Name=Settings
+Exec={{exec}} --settings

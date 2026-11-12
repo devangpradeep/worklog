@@ -1,0 +1,32 @@
+[workspace]
+members = ["core"]
+resolver = "2"
+
+[package]
+name = "worklog"
+version = "0.2.2"
+description = "A local work journal for Ubuntu"
+edition = "2021"
+rust-version = "1.90"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+chrono = "0.4"
+gtk = "0.18"
+notify-rust = "4"
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
+tokio = { version = "1", features = ["time"] }
+worklog-core = { path = "core" }
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+strip = true

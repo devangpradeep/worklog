@@ -1,0 +1,64 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "WorkLog",
+  "version": "0.2.2",
+  "identifier": "io.worklog.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://127.0.0.1:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "dashboard",
+        "title": "WorkLog",
+        "width": 1110,
+        "height": 770,
+        "minWidth": 680,
+        "minHeight": 520,
+        "visible": false,
+        "backgroundColor": "#f7f7fb"
+      },
+      {
+        "label": "capture",
+        "url": "index.html?window=capture",
+        "title": "Quick Capture · WorkLog",
+        "width": 520,
+        "height": 218,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "visible": false,
+        "skipTaskbar": true,
+        "center": true,
+        "backgroundColor": "#ffffff"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data:; font-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb"],
+    "category": "Productivity",
+    "shortDescription": "A local work journal for Ubuntu",
+    "longDescription": "Capture work in seconds and review your activities on a daily timeline.",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png"],
+    "linux": {
+      "deb": {
+        "desktopTemplate": "linux/worklog.desktop.hbs",
+        "files": {
+          "/usr/share/doc/work-log/DM-Sans-OFL.txt": "../node_modules/@fontsource/dm-sans/LICENSE",
+          "/usr/share/doc/work-log/Lucide-LICENSE.txt": "../node_modules/lucide-react/LICENSE",
+          "/usr/share/doc/work-log/React-LICENSE.txt": "../node_modules/react/LICENSE",
+          "/usr/share/doc/work-log/React-DOM-LICENSE.txt": "../node_modules/react-dom/LICENSE",
+          "/usr/share/doc/work-log/Tailwind-LICENSE.txt": "../node_modules/tailwindcss/LICENSE",
+          "/usr/share/doc/work-log/Tauri-LICENSE-MIT.txt": "../node_modules/@tauri-apps/api/LICENSE-MIT",
+          "/usr/share/doc/work-log/Tauri-LICENSE-APACHE.txt": "../node_modules/@tauri-apps/api/LICENSE-APACHE-2.0"
+        }
+      }
+    }
+  }
+}
