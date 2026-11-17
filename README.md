@@ -35,10 +35,10 @@ npm run tauri build -- --bundles deb
 
 Tauri writes the package under `src-tauri/target/release/bundle/deb/`. Build on Ubuntu 24.04 for your target architecture. [Tauri Debian packaging](https://v2.tauri.app/distribute/debian/)
 
-For the 0.2.11 amd64 build, run the following from the repository root. If you are upgrading, choose **Quit WorkLog** from the tray first.
+For the 0.2.12 amd64 build, run the following from the repository root. If you are upgrading, choose **Quit WorkLog** from the tray first.
 
 ```bash
-sudo apt install ./src-tauri/target/release/bundle/deb/WorkLog_0.2.11_amd64.deb
+sudo apt install ./src-tauri/target/release/bundle/deb/WorkLog_0.2.12_amd64.deb
 ```
 
 Open **WorkLog** from Applications or run `worklog` in a terminal.
@@ -58,6 +58,8 @@ Select **By activity** in the timeline to see the total in hours and minutes for
 **Time worked** totals sessions that started on the selected date, subtracting recorded breaks. The live total pauses during a break and stays available in the toolbar while you scroll. Overlapping time counts once, and overnight sessions appear on the date they started. Use the sidebar button in the toolbar to collapse or expand the full left column.
 
 Quick Capture shows the workday, running tasks, and totals below the entry field. The break duration includes an ongoing break, and the completed count updates when it ends. With a workday open and no task running, choose **Take break**. When two tasks are running, **Manage running tasks** in the tray opens Quick Capture so you can stop either timer.
+
+Choose **Open dashboard** at the top of Quick Capture to return to the journal. Your draft is ready to resume when you reopen Quick Capture.
 
 In the dashboard, **Ctrl+N** opens Quick Capture and **Ctrl+F** focuses journal search. Closing the dashboard hides it by default. Change **Minimize to tray** in Settings to use the dock, or select **Quit WorkLog** to stop the app.
 
