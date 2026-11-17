@@ -114,6 +114,7 @@ export const api = {
   captureContext: () => invoke<CaptureContext>('capture_context'),
   hideCapture: (generation: number) => invoke<void>('hide_capture', { generation }),
   openCapture: (mode: CaptureMode = 'quick') => invoke<void>('open_capture', { mode }),
+  openDashboard: (generation: number) => invoke<void>('open_dashboard_from_capture', { generation }),
   takeRoute: () => invoke<DashboardRoute | null>('take_dashboard_route'),
   capture: (description: string, categoryId: number | null, captureKey: string, mode: CaptureMode) =>
     invoke<Entry>('capture_entry', { description, categoryId, captureKey, mode }),

@@ -514,8 +514,8 @@ fieldset p.help { margin-top: 6px; }
 .capture-header { display: flex; align-items: center; gap: 9px; margin-bottom: 15px; }
 .capture-header h1 { font-weight: 700; font-size: 17px; letter-spacing: -.025em; }
 .capture-header-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
-.capture-back { min-height: 30px; padding: 5px 8px; font-size: 12px; color: var(--muted); }
-.capture-back:not(:disabled):hover { background: var(--subtle); color: var(--ink); }
+.capture-header-button { min-height: 30px; padding: 5px 8px; font-size: 12px; color: var(--muted); }
+.capture-header-button:not(:disabled):hover { background: var(--subtle); color: var(--ink); }
 .capture-form input { flex: 1; padding: 11px 12px; }
 .capture-form input:focus { box-shadow: 0 0 0 2px var(--accent-soft); }
 .capture-save { min-width: 85px; }

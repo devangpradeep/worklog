@@ -101,6 +101,7 @@ fn main() {
             capture_context,
             hide_capture,
             open_capture,
+            open_dashboard_from_capture,
             take_dashboard_route,
             capture_entry,
             track_work,

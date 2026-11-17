@@ -79,6 +79,20 @@ pub fn open_capture(app: AppHandle, mode: Option<CaptureMode>) {
 }
 
 #[tauri::command]
+pub fn open_dashboard_from_capture(
+    app: AppHandle,
+    window: WebviewWindow,
+    desktop: State<'_, Desktop>,
+    generation: u64,
+) -> Reply<()> {
+    if window.label() == "capture" && capture_context(desktop)?.generation == generation {
+        window.hide().map_err(message)?;
+        desktop::show_dashboard(&app, DashboardRoute::Journal);
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn take_dashboard_route(desktop: State<'_, Desktop>) -> Option<DashboardRoute> {
     desktop.route.lock().ok()?.take()
 }

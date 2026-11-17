@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, CornerDownLeft, TriangleAlert, X } from 'lucide-react'
+import { ArrowLeft, Check, CornerDownLeft, LayoutDashboard, TriangleAlert, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, errorText, type CaptureContext, type CaptureMode, type TrackingAction } from './api'
 import { useData, useNativeEvent, useToday, useWorkdaySummary } from './hooks'
@@ -164,8 +164,12 @@ export default function Capture() {
         <Brand small />
         <h1>{taskMode ? 'Start task' : 'Quick Capture'}</h1>
         <div className="capture-header-actions">
-          {taskMode && <button type="button" className="button capture-back" disabled={controlsDisabled}
+          {taskMode && <button type="button" className="button capture-header-button" disabled={controlsDisabled}
             onClick={() => void runControl(() => api.openCapture('quick'))}><ArrowLeft size={14} /> Log activity</button>}
+          <button type="button" className="button capture-header-button" disabled={controlsDisabled}
+            onClick={() => context && void runControl(() => api.openDashboard(context.generation))}>
+            <LayoutDashboard size={14} aria-hidden="true" /> Open dashboard
+          </button>
           <button type="button" className="icon-button" aria-label="Dismiss Quick Capture" title="Dismiss (Esc)" onClick={() => void dismiss()}><X size={17} /></button>
         </div>
       </header>
