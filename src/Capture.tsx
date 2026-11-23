@@ -1,15 +1,19 @@
-import { ArrowLeft, Check, CornerDownLeft, LayoutDashboard, TriangleAlert, X } from 'lucide-react'
+import { ArrowLeft, Check, CornerDownLeft, History, LayoutDashboard, TriangleAlert, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { api, errorText, type CaptureContext, type CaptureMode, type TrackingAction } from './api'
+import { api, errorText, type CaptureContext, type CaptureMode, type Entry, type TrackingAction } from './api'
 import { useData, useNativeEvent, useToday, useWorkdaySummary } from './hooks'
-import { localDay } from './time'
+import { dateTimeInput, localDay, timestampFromInput, type DateTimeInput } from './time'
 import { Brand, CategoryOptions } from './ui'
 import CaptureTracking from './CaptureTracking'
+import RecentTasks from './RecentTasks'
+import DateTimeFields from './DateTimeFields'
 
 interface Draft {
   description: string
   categoryId?: number | null
   key?: string
+  start?: 'now' | '15m' | 'custom'
+  startedAt?: DateTimeInput
 }
 
 const storageKey = (mode: CaptureMode) => mode === 'task' ? 'worklog.task.draft' : 'worklog.capture.draft'
@@ -43,8 +47,11 @@ export default function Capture() {
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [changingTracking, setChangingTracking] = useState(false)
+  const [showRecent, setShowRecent] = useState(false)
   const controlsDisabled = !context || busy || saved || changingTracking
   const running = useRef(false)
+  const restartRequest = useRef<{ sourceId: number; key: string } | null>(null)
+  const recentBack = useRef<HTMLButtonElement>(null)
   const input = useRef<HTMLInputElement>(null)
   const timer = useRef<number | undefined>(undefined)
 
@@ -62,6 +69,7 @@ export default function Capture() {
   const categoryId = snapshot?.categories.some(category => category.isActive && category.id === desiredCategory)
     ? desiredCategory : null
   const settings = snapshot?.settings
+  const startChoice = draft.start ?? 'now'
 
   function update(value: Draft, target = mode) {
     setDrafts(drafts => ({ ...drafts, [target]: value }))
@@ -83,6 +91,7 @@ export default function Capture() {
     window.clearTimeout(timer.current)
     setSaved(false)
     setError('')
+    setShowRecent(false)
     input.current?.focus()
   }
 
@@ -99,6 +108,10 @@ export default function Capture() {
     }
   }, [])
 
+  useEffect(() => {
+    if (showRecent) recentBack.current?.focus()
+  }, [showRecent])
+
   async function dismiss() {
     try {
       await api.hideCapture((context ?? await api.captureContext()).generation)
@@ -109,6 +122,7 @@ export default function Capture() {
 
   async function runControl(action: () => Promise<void>) {
     if (controlsDisabled || running.current) return
+    running.current = true
     setChangingTracking(true)
     setError('')
     try {
@@ -116,9 +130,22 @@ export default function Capture() {
     } catch (error) {
       setError(errorText(error))
     } finally {
+      running.current = false
       setChangingTracking(false)
-      input.current?.focus()
+      requestAnimationFrame(() => (input.current ?? recentBack.current)?.focus())
     }
+  }
+
+  function restartTask(task: Entry) {
+    if (!context || taskCount >= 2) return
+    const { generation } = context
+    void runControl(async () => {
+      const key = restartRequest.current?.sourceId === task.id ? restartRequest.current.key : createKey()
+      restartRequest.current = { sourceId: task.id, key }
+      await api.restartTask(task.id, key)
+      restartRequest.current = null
+      if (latestContext.current?.generation === generation) setShowRecent(false)
+    })
   }
 
   async function submit(event: FormEvent) {
@@ -128,10 +155,15 @@ export default function Capture() {
     setBusy(true)
     setError('')
     const captureKey = draft.key ?? createKey()
-    update({ description: draft.description, categoryId, key: captureKey })
+    update({ ...draft, categoryId, key: captureKey })
     try {
       const { generation, mode } = context
-      await api.capture(draft.description, categoryId, captureKey, mode)
+      let startedAt: number | null = null
+      if (mode === 'task' && startChoice === '15m') startedAt = Date.now() - 15 * 60_000
+      if (mode === 'task' && startChoice === 'custom' && draft.startedAt) {
+        startedAt = timestampFromInput(draft.startedAt, settings.timeFormat, 'start')
+      }
+      await api.capture(draft.description, categoryId, captureKey, mode, startedAt)
       update(emptyDraft, mode)
       if (latestContext.current?.generation !== generation) return
       if (settings.showConfirmation) setSaved(true)
@@ -157,14 +189,20 @@ export default function Capture() {
 
   return (
     <main className="capture-shell" onKeyDown={event => {
-      if (event.key === 'Escape') { event.preventDefault(); void dismiss() }
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        if (showRecent) setShowRecent(false)
+        else void dismiss()
+      }
       if (event.key === 'Enter' && event.repeat) event.preventDefault()
     }}>
       <header className="capture-header">
-        <Brand small />
-        <h1>{taskMode ? 'Start task' : 'Quick Capture'}</h1>
+        {showRecent
+          ? <button type="button" className="icon-button" ref={recentBack} aria-label="Back to capture" onClick={() => setShowRecent(false)}><ArrowLeft size={16} /></button>
+          : <Brand small />}
+        <h1>{showRecent ? 'Recent tasks' : taskMode ? 'Start task' : 'Quick Capture'}</h1>
         <div className="capture-header-actions">
-          {taskMode && <button type="button" className="button capture-header-button" disabled={controlsDisabled}
+          {taskMode && !showRecent && <button type="button" className="button capture-header-button" disabled={controlsDisabled}
             onClick={() => void runControl(() => api.openCapture('quick'))}><ArrowLeft size={14} /> Log activity</button>}
           <button type="button" className="button capture-header-button" disabled={controlsDisabled}
             onClick={() => context && void runControl(() => api.openDashboard(context.generation))}>
@@ -173,7 +211,9 @@ export default function Capture() {
           <button type="button" className="icon-button" aria-label="Dismiss Quick Capture" title="Dismiss (Esc)" onClick={() => void dismiss()}><X size={17} /></button>
         </div>
       </header>
-      <form className="capture-form" onSubmit={submit}>
+      {showRecent && <RecentTasks key={today} categories={snapshot?.categories ?? []} format={settings?.timeFormat ?? '24h'}
+        revision={revision} disabled={controlsDisabled} runningCount={taskCount} onBreak={!!snapshot?.tracking.activeBreak} onStart={restartTask} />}
+      {!showRecent && <form className="capture-form" onSubmit={submit}>
         <div className="flex items-stretch gap-2">
           <input
             autoFocus ref={input} aria-label={taskMode ? 'Task' : 'Activity'} placeholder={taskMode ? 'What are you working on?' : 'What did you work on?'}
@@ -185,7 +225,7 @@ export default function Capture() {
                 window.clearTimeout(timer.current)
                 setSaved(false)
               }
-              update({ description: event.target.value, categoryId: draft.categoryId })
+              update({ ...draft, description: event.target.value, key: undefined })
             }}
           />
           <button className="button primary capture-save" disabled={controlsDisabled || taskLimit || !settings || !draft.description.trim()}>
@@ -194,22 +234,45 @@ export default function Capture() {
           </button>
         </div>
         <div className="capture-options">
-          <label htmlFor="capture-category" className="sr-only">Optional category</label>
-          <select id="capture-category" value={categoryId ?? ''} disabled={!snapshot || busy} onChange={event =>
-            update({ description: draft.description, categoryId: event.target.value ? Number(event.target.value) : null })
-          }>
-            <option value="">No category</option>
-            <CategoryOptions categories={snapshot?.categories ?? []} />
-          </select>
+          <div className="capture-entry-options">
+            <label htmlFor="capture-category" className="sr-only">Optional category</label>
+            <select id="capture-category" value={categoryId ?? ''} disabled={!snapshot || busy} onChange={event =>
+              update({ ...draft, categoryId: event.target.value ? Number(event.target.value) : null, key: undefined })
+            }>
+              <option value="">No category</option>
+              <CategoryOptions categories={snapshot?.categories ?? []} />
+            </select>
+            <button type="button" className="button capture-header-button" disabled={controlsDisabled} onClick={() => {
+              setError('')
+              setShowRecent(true)
+            }}><History size={14} aria-hidden="true" /> Recent tasks</button>
+          </div>
           <span className="capture-hint"><kbd>Enter</kbd> to {taskMode ? 'start' : 'save'} <span aria-hidden="true">·</span> <kbd>Esc</kbd> to hide</span>
         </div>
+        {taskMode && <div className="capture-start-time">
+          <label htmlFor="capture-start">Started</label>
+          <select id="capture-start" value={startChoice} disabled={controlsDisabled} onChange={event => {
+            const start = event.target.value as Draft['start']
+            update({ ...draft, start, key: undefined, startedAt: draft.startedAt ?? dateTimeInput(new Date(), settings?.timeFormat ?? '24h') })
+            setError('')
+          }}>
+            <option value="now">Now</option>
+            <option value="15m">15 minutes ago</option>
+            <option value="custom">Custom time…</option>
+          </select>
+        </div>}
+        {taskMode && startChoice === 'custom' && draft.startedAt && <DateTimeFields label="Start"
+          value={draft.startedAt} format={settings?.timeFormat ?? '24h'} onChange={startedAt => {
+            update({ ...draft, startedAt, key: undefined })
+            setError('')
+          }} />}
         {showTaskNotice && <p className="capture-task-notice" id="capture-task-notice" role="status">
           <TriangleAlert size={14} aria-hidden="true" />
           {taskLimit ? 'Two tasks are running. Stop one to start another.' : 'Your current task will keep running.'}
         </p>}
         {saved && <span className="sr-only" role="status">{taskMode ? 'Task started' : 'Activity saved'}</span>}
-      </form>
-      {snapshot && <CaptureTracking
+      </form>}
+      {!showRecent && snapshot && <CaptureTracking
         tracking={snapshot.tracking}
         summary={workday?.summary}
         format={snapshot.settings.timeFormat}

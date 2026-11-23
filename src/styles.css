@@ -520,10 +520,24 @@ fieldset p.help { margin-top: 6px; }
 .capture-form input:focus { box-shadow: 0 0 0 2px var(--accent-soft); }
 .capture-save { min-width: 85px; }
 .capture-options { margin-top: 11px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.capture-options select { padding: 5px 7px; font-size: 12px; max-width: 48%; }
+.capture-entry-options { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.capture-entry-options select { padding: 5px 7px; font-size: 12px; text-overflow: ellipsis; }
 .capture-hint { font-size: 11px; color: var(--muted); white-space: nowrap; }
 .capture-hint > span { padding: 0 3px; }
+.capture-start-time { display: flex; align-items: center; gap: 9px; margin-top: 10px; color: var(--muted); font-size: 12px; }
+.capture-start-time select { padding: 5px 7px; font-size: 12px; }
+.capture-start-time + .form-grid { margin-top: 9px; }
 .capture-task-notice { display: flex; align-items: center; gap: 7px; margin-top: 9px; padding: 6px 8px; border-radius: 6px; background: var(--amber-bg); color: var(--amber); font-size: 12px; }
+.recent-task-list { margin: 10px 0 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: 9px; background: var(--subtle); }
+.recent-task-list li + li { border-top: 1px solid var(--line); }
+.recent-task { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; min-height: 49px; padding: 6px 10px; text-align: start; }
+.recent-task:not(:disabled):hover { background: var(--surface-hover); }
+.recent-task:focus-visible { outline-offset: -2px; }
+.recent-task-details { display: grid; min-width: 0; }
+.recent-task-details > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-task-details strong { font-size: 13px; font-weight: 650; }
+.recent-task-details small { color: var(--muted); font-size: 11px; }
+.recent-task-action { display: flex; align-items: center; gap: 5px; color: var(--accent-text); font-size: 12px; white-space: nowrap; }
 .capture-tracking { margin-top: 14px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--subtle); }
 .capture-tracking-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 47px; padding: 5px 0; }
 .capture-tracking-row + .capture-tracking-row { border-top: 1px solid var(--line); }

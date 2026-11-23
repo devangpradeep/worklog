@@ -1,4 +1,4 @@
-use std::{path::Path, time::Duration};
+use std::{collections::HashSet, path::Path, time::Duration};
 
 use chrono::Utc;
 use rusqlite::{
@@ -206,6 +206,64 @@ impl Store {
         self.write_entry(None, input, Some(capture_key), true)
     }
 
+    pub fn recent_tasks(&self, now: i64) -> Result<Vec<Entry>> {
+        let (start, end) = day_bounds(&local_date(now)?)?;
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {ENTRY_COLUMNS} FROM work_entries
+             WHERE kind = 'activity' AND activity_at >= ?1 AND activity_at < ?2
+               AND end_at <= ?3 ORDER BY end_at DESC, id DESC",
+        ))?;
+        let rows = stmt.query_map([start, end, now], map_entry)?;
+        let mut seen = HashSet::new();
+        let mut tasks = Vec::new();
+        for row in rows {
+            let entry = row?;
+            let description = entry
+                .description
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            let reference = entry
+                .reference
+                .as_ref()
+                .map(|value| (value.prefix.clone(), value.number.clone()));
+            if seen.insert((description.to_lowercase(), entry.category_id, reference)) {
+                tasks.push(entry);
+                if tasks.len() == 5 {
+                    break;
+                }
+            }
+        }
+        Ok(tasks)
+    }
+
+    pub fn restart_task(&mut self, source_id: i64, capture_key: &str) -> Result<Entry> {
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if let Some(entry) = captured_entry(&tx, capture_key)? {
+            return Ok(entry);
+        }
+        let now = Utc::now().timestamp_millis();
+        let source = read_entry(&tx, source_id)?;
+        if source.kind != EntryKind::Activity || !source.end_at.is_some_and(|end| end <= now) {
+            return Err(invalid("Choose a finished task to start again."));
+        }
+        crate::tracking::prepare_task_tracking(&tx, now, now)?;
+        tx.execute(
+            "INSERT INTO work_entries (description, reference_type, reference_number, category_id,
+                activity_at, created_at, updated_at, capture_key, is_running)
+             SELECT description, reference_type, reference_number, category_id, ?1, ?1, ?1, ?2, 1
+             FROM work_entries WHERE id = ?3",
+            params![now, capture_key, source_id],
+        )?;
+        let entry = read_entry(&tx, tx.last_insert_rowid())?;
+        write_setting(&tx, "last_capture_category", &entry.category_id)?;
+        flag_review(&tx, &local_date(now)?)?;
+        tx.commit()?;
+        Ok(entry)
+    }
+
     fn write_entry(
         &mut self,
         id: Option<i64>,
@@ -218,20 +276,11 @@ impl Store {
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let now = Utc::now().timestamp_millis();
         if let Some(key) = capture_key {
-            if id.is_some() || key.len() != 32 || !key.bytes().all(|c| c.is_ascii_hexdigit()) {
-                return Err(invalid(
-                    "Quick Capture sent an invalid request. Reopen WorkLog and try again.",
-                ));
+            if id.is_some() {
+                return Err(invalid(CAPTURE_KEY_ERROR));
             }
-            if let Some(existing) = tx
-                .query_row(
-                    "SELECT id FROM work_entries WHERE capture_key = ?1",
-                    [key],
-                    |row| row.get(0),
-                )
-                .optional()?
-            {
-                return read_entry(&tx, existing);
+            if let Some(entry) = captured_entry(&tx, key)? {
+                return Ok(entry);
             }
         }
         let description = input.description.trim();
@@ -265,14 +314,10 @@ impl Store {
         }
         let prefix = input.reference.as_ref().map(|value| &value.prefix);
         let number = input.reference.as_ref().map(|value| &value.number);
-        let activity_at = if start_task {
-            now
-        } else {
-            input
-                .activity_at
-                .or_else(|| previous.as_ref().map(|entry| entry.activity_at))
-                .unwrap_or(now)
-        };
+        let activity_at = input
+            .activity_at
+            .or_else(|| previous.as_ref().map(|entry| entry.activity_at))
+            .unwrap_or(now);
         let date = local_date(activity_at)?;
         let end_at = if previous.is_none() || input.update_end {
             input.end_at
@@ -317,7 +362,7 @@ impl Store {
             previous.id
         } else {
             if start_task {
-                crate::tracking::prepare_task_tracking(&tx, now)?;
+                crate::tracking::prepare_task_tracking(&tx, activity_at, now)?;
             }
             tx.execute(
                 "INSERT INTO work_entries (description, reference_type, reference_number, category_id,
@@ -418,7 +463,10 @@ pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
     Ok(())
 }
 
-fn read_setting<T: serde::de::DeserializeOwned>(conn: &Connection, key: &str) -> Result<Option<T>> {
+pub(crate) fn read_setting<T: serde::de::DeserializeOwned>(
+    conn: &Connection,
+    key: &str,
+) -> Result<Option<T>> {
     let value: Option<String> = conn
         .query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
             row.get(0)
@@ -427,7 +475,11 @@ fn read_setting<T: serde::de::DeserializeOwned>(conn: &Connection, key: &str) ->
     Ok(value.as_deref().map(serde_json::from_str).transpose()?)
 }
 
-fn write_setting(conn: &Connection, key: &str, value: &impl serde::Serialize) -> Result<()> {
+pub(crate) fn write_setting(
+    conn: &Connection,
+    key: &str,
+    value: &impl serde::Serialize,
+) -> Result<()> {
     conn.execute(
         "INSERT INTO settings (key, value) VALUES (?1, ?2)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -493,6 +545,22 @@ fn read_entry(conn: &Connection, id: i64) -> Result<Entry> {
     )
     .optional()?
     .ok_or_else(|| invalid("This activity no longer exists."))
+}
+
+const CAPTURE_KEY_ERROR: &str =
+    "Quick Capture sent an invalid request. Reopen WorkLog and try again.";
+
+fn captured_entry(conn: &Connection, key: &str) -> Result<Option<Entry>> {
+    if key.len() != 32 || !key.bytes().all(|c| c.is_ascii_hexdigit()) {
+        return Err(invalid(CAPTURE_KEY_ERROR));
+    }
+    Ok(conn
+        .query_row(
+            &format!("SELECT {ENTRY_COLUMNS} FROM work_entries WHERE capture_key = ?1"),
+            [key],
+            map_entry,
+        )
+        .optional()?)
 }
 
 fn map_review(row: &Row<'_>) -> rusqlite::Result<Review> {

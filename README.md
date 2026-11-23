@@ -35,10 +35,10 @@ npm run tauri build -- --bundles deb
 
 Tauri writes the package under `src-tauri/target/release/bundle/deb/`. Build on Ubuntu 24.04 for your target architecture. [Tauri Debian packaging](https://v2.tauri.app/distribute/debian/)
 
-For the 0.2.12 amd64 build, run the following from the repository root. If you are upgrading, choose **Quit WorkLog** from the tray first.
+For the 0.2.15 amd64 build, run the following from the repository root. If you are upgrading, choose **Quit WorkLog** from the tray first.
 
 ```bash
-sudo apt install ./src-tauri/target/release/bundle/deb/WorkLog_0.2.12_amd64.deb
+sudo apt install ./src-tauri/target/release/bundle/deb/WorkLog_0.2.15_amd64.deb
 ```
 
 Open **WorkLog** from Applications or run `worklog` in a terminal.
@@ -60,6 +60,14 @@ Select **By activity** in the timeline to see the total in hours and minutes for
 Quick Capture shows the workday, running tasks, and totals below the entry field. The break duration includes an ongoing break, and the completed count updates when it ends. With a workday open and no task running, choose **Take break**. When two tasks are running, **Manage running tasks** in the tray opens Quick Capture so you can stop either timer.
 
 Choose **Open dashboard** at the top of Quick Capture to return to the journal. Your draft is ready to resume when you reopen Quick Capture.
+
+To pick up a task you finished today, choose **Recent tasks** in Quick Capture and select **Start again**. A new timer uses the same name, category, and reference. **By activity** totals the matching time blocks on each day.
+
+When starting a task in Quick Capture, choose **Now**, **15 minutes ago**, or **Custom time** under **Started**. An earlier start extends the current work session when needed. If it overlaps a recorded break, correct that break or choose a later start.
+
+**Task reminders** are enabled by default under **Settings → Reminders**. After five minutes with an open workday and no running task or break, WorkLog asks **What are you working on?** and repeats every five minutes. Select **Start task** or **Take break** from the notification. Checks run every 15 seconds while WorkLog is open, and reminders pause during task timers and breaks.
+
+**Hourly task check** is also enabled by default under **Settings → Reminders**. Each task prompts **Still working on this task?** after one hour. **Keep working** schedules the next check an hour after your confirmation. **Switch task** stops that timer and opens Quick Capture to start the next task. Without a response, a running task prompts again an hour later.
 
 In the dashboard, **Ctrl+N** opens Quick Capture and **Ctrl+F** focuses journal search. Closing the dashboard hides it by default. Change **Minimize to tray** in Settings to use the dock, or select **Quit WorkLog** to stop the app.
 
