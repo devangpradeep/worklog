@@ -18,6 +18,8 @@ export interface Settings {
   showConfirmation: boolean
   rememberCategory: boolean
   remindersEnabled: boolean
+  taskRemindersEnabled: boolean
+  taskChecksEnabled: boolean
   reminderTime: string
   workingDays: number[]
   snoozeMinutes: number
@@ -116,8 +118,10 @@ export const api = {
   openCapture: (mode: CaptureMode = 'quick') => invoke<void>('open_capture', { mode }),
   openDashboard: (generation: number) => invoke<void>('open_dashboard_from_capture', { generation }),
   takeRoute: () => invoke<DashboardRoute | null>('take_dashboard_route'),
-  capture: (description: string, categoryId: number | null, captureKey: string, mode: CaptureMode) =>
-    invoke<Entry>('capture_entry', { description, categoryId, captureKey, mode }),
+  capture: (description: string, categoryId: number | null, captureKey: string, mode: CaptureMode, startedAt: number | null = null) =>
+    invoke<Entry>('capture_entry', { description, categoryId, captureKey, mode, startedAt }),
+  recentTasks: () => invoke<Entry[]>('recent_tasks'),
+  restartTask: (sourceId: number, captureKey: string) => invoke<Entry>('restart_task', { sourceId, captureKey }),
   track: (action: TrackingAction) => invoke<void>('track_work', { action }),
   workdaySummary: (date: string) => invoke<WorkdaySummary>('workday_summary', { date }),
   updateWorkSession: (session: WorkSession, startedAt: number, endedAt: number | null) =>

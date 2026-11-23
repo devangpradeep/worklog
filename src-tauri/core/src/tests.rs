@@ -52,6 +52,362 @@ fn creates_and_deduplicates_quick_capture_with_utc_timestamps() {
 }
 
 #[test]
+fn task_reminders_repeat_every_five_idle_minutes_and_survive_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("worklog.sqlite3");
+    let mut db = Store::open(&path).unwrap();
+    let minute = 60_000;
+    let start = day_bounds("2026-07-15").unwrap().0 + 9 * 3_600_000;
+    assert!(db.claim_task_reminder(start).unwrap().is_none());
+    db.conn
+        .execute(
+            "INSERT INTO work_sessions (started_at) VALUES (?1)",
+            [start],
+        )
+        .unwrap();
+    assert!(db
+        .claim_task_reminder(start + 5 * minute - 1)
+        .unwrap()
+        .is_none());
+    let first = db.claim_task_reminder(start + 5 * minute).unwrap().unwrap();
+    assert!(db
+        .task_reminder_is_current(&first, start + 6 * minute)
+        .unwrap());
+    assert!(db
+        .claim_task_reminder(start + 10 * minute - 1)
+        .unwrap()
+        .is_none());
+    assert!(db
+        .claim_task_reminder(start + 10 * minute)
+        .unwrap()
+        .is_some());
+    drop(db);
+    let mut db = Store::open(&path).unwrap();
+    assert!(db
+        .claim_task_reminder(start + 11 * minute)
+        .unwrap()
+        .is_none());
+    let reminder = db
+        .claim_task_reminder(start + 15 * minute)
+        .unwrap()
+        .unwrap();
+    db.retry_task_reminder(&reminder).unwrap();
+    assert!(db
+        .claim_task_reminder(start + 15 * minute)
+        .unwrap()
+        .is_some());
+    db.conn.execute(
+        "INSERT INTO work_entries (description, activity_at, created_at, updated_at, is_running)
+         VALUES ('Task', ?1, ?1, ?1, 1)", [start + 16 * minute],
+    ).unwrap();
+    assert!(!db
+        .task_reminder_is_current(&first, start + 20 * minute)
+        .unwrap());
+    assert!(db
+        .claim_task_reminder(start + 25 * minute)
+        .unwrap()
+        .is_none());
+    db.conn
+        .execute(
+            "UPDATE work_entries SET is_running = 0, end_at = ?1",
+            [start + 25 * minute],
+        )
+        .unwrap();
+    assert!(db
+        .claim_task_reminder(start + 30 * minute - 1)
+        .unwrap()
+        .is_none());
+    assert!(db
+        .claim_task_reminder(start + 30 * minute)
+        .unwrap()
+        .is_some());
+    db.conn.execute(
+        "INSERT INTO work_entries (description, kind, activity_at, created_at, updated_at, is_running)
+         VALUES ('Break', 'break', ?1, ?1, ?1, 1)", [start + 31 * minute],
+    ).unwrap();
+    assert!(db
+        .claim_task_reminder(start + 40 * minute)
+        .unwrap()
+        .is_none());
+    db.conn
+        .execute(
+            "UPDATE work_entries SET is_running = 0, end_at = ?1 WHERE kind = 'break'",
+            [start + 40 * minute],
+        )
+        .unwrap();
+    assert!(db
+        .claim_task_reminder(start + 45 * minute - 1)
+        .unwrap()
+        .is_none());
+    let reminder = db
+        .claim_task_reminder(start + 45 * minute)
+        .unwrap()
+        .unwrap();
+    assert!(!db
+        .task_reminder_is_current(&first, start + 45 * minute)
+        .unwrap());
+    db.save_settings(Settings {
+        task_reminders_enabled: false,
+        ..Settings::default()
+    })
+    .unwrap();
+    assert!(db
+        .claim_task_reminder(start + 50 * minute)
+        .unwrap()
+        .is_none());
+    assert!(!db
+        .task_reminder_is_current(&reminder, start + 50 * minute)
+        .unwrap());
+    db.save_settings(Settings::default()).unwrap();
+    db.conn
+        .execute(
+            "UPDATE work_sessions SET ended_at = ?1",
+            [start + 51 * minute],
+        )
+        .unwrap();
+    assert!(db
+        .claim_task_reminder(start + 60 * minute)
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn hourly_checks_survive_restart_and_confirmation_defers_the_next_check() {
+    use crate::{TaskCheckAction, TrackingAction};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("hourly.sqlite3");
+    let mut db = Store::open(&path).unwrap();
+    let now = Utc::now().timestamp_millis();
+    let hour = 60 * 60_000;
+    let task = db
+        .start_task(
+            input("Long task", Some(now - hour)),
+            "77777777777777777777777777777777",
+        )
+        .unwrap();
+    assert!(db.claim_task_checks(now - 1).unwrap().is_empty());
+    let mut checks = db.claim_task_checks(now).unwrap();
+    assert_eq!(checks.len(), 1);
+    let first = checks.pop().unwrap();
+    assert_eq!(first.task.id, task.id);
+    drop(db);
+    let mut db = Store::open(&path).unwrap();
+    assert!(db.claim_task_checks(now + 60_000).unwrap().is_empty());
+    let confirmed_at = now + 5 * 60_000;
+    assert!(db
+        .answer_task_check(&first, TaskCheckAction::KeepWorking, confirmed_at)
+        .unwrap());
+    assert!(db.entry(task.id).unwrap().is_running);
+    assert!(db
+        .claim_task_checks(confirmed_at + hour - 1)
+        .unwrap()
+        .is_empty());
+    let second = db
+        .claim_task_checks(confirmed_at + hour)
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert!(!db
+        .answer_task_check(&first, TaskCheckAction::SwitchTask, confirmed_at + hour)
+        .unwrap());
+    assert!(db.entry(task.id).unwrap().is_running);
+    db.retry_task_check(&second).unwrap();
+    let retry = db
+        .claim_task_checks(confirmed_at + hour + 1)
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert!(db
+        .answer_task_check(&retry, TaskCheckAction::SwitchTask, confirmed_at + hour + 2)
+        .unwrap());
+    assert!(!db.entry(task.id).unwrap().is_running);
+    assert_eq!(
+        db.entry(task.id).unwrap().end_at,
+        Some(confirmed_at + hour + 2)
+    );
+    assert!(!db
+        .answer_task_check(&retry, TaskCheckAction::SwitchTask, confirmed_at + hour + 3)
+        .unwrap());
+    db.track(TrackingAction::StartBreak).unwrap();
+    assert!(db
+        .claim_task_checks(confirmed_at + 2 * hour)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn hourly_checks_handle_two_tasks_and_ignore_changed_or_disabled_timers() {
+    use crate::TaskCheckAction;
+    let mut db = database();
+    let now = Utc::now().timestamp_millis();
+    let hour = 60 * 60_000;
+    let first = db
+        .start_task(
+            input("First", Some(now - hour)),
+            "88888888888888888888888888888888",
+        )
+        .unwrap();
+    let second = db
+        .start_task(
+            input("Second", Some(now - hour / 2)),
+            "99999999999999999999999999999999",
+        )
+        .unwrap();
+    let check_first = db.claim_task_checks(now).unwrap().pop().unwrap();
+    assert_eq!(check_first.task.id, first.id);
+    let check_second = db.claim_task_checks(now + hour / 2).unwrap().pop().unwrap();
+    assert_eq!(check_second.task.id, second.id);
+    db.save_settings(Settings {
+        task_checks_enabled: false,
+        ..Settings::default()
+    })
+    .unwrap();
+    assert!(db.claim_task_checks(now + 2 * hour).unwrap().is_empty());
+    assert!(!db
+        .answer_task_check(&check_first, TaskCheckAction::SwitchTask, now)
+        .unwrap());
+    db.save_settings(Settings::default()).unwrap();
+    assert!(db
+        .answer_task_check(&check_first, TaskCheckAction::SwitchTask, now)
+        .unwrap());
+    assert!(db.entry(second.id).unwrap().is_running);
+    db.conn
+        .execute(
+            "UPDATE work_entries SET activity_at = activity_at + 1 WHERE id = ?1",
+            [second.id],
+        )
+        .unwrap();
+    assert!(!db
+        .answer_task_check(&check_second, TaskCheckAction::SwitchTask, now)
+        .unwrap());
+    assert!(db.entry(second.id).unwrap().is_running);
+    db.delete_entry(second.id).unwrap();
+    assert!(db.claim_task_checks(now + 2 * hour).unwrap().is_empty());
+}
+
+#[test]
+fn earlier_task_starts_update_worked_time_and_keep_break_ranges_consistent() {
+    use crate::TrackingAction;
+    let mut db = database();
+    let now = Utc::now().timestamp_millis();
+    db.track(TrackingAction::StartDay).unwrap();
+    let start = now - 15 * 60_000;
+    let key = "0123456789abcdef0123456789abcdef";
+    let task = db
+        .start_task(input("Started earlier", Some(start)), key)
+        .unwrap();
+    assert_eq!(task.activity_at, start);
+    assert_eq!(
+        db.tracking_state().unwrap().session.unwrap().started_at,
+        start
+    );
+    assert!(
+        db.workday_summary(&local_date(start).unwrap(), now)
+            .unwrap()
+            .totals
+            .unwrap()
+            .worked_ms
+            >= 15 * 60_000
+    );
+    assert_eq!(
+        db.start_task(input("Retry", Some(now)), key).unwrap().id,
+        task.id
+    );
+    assert!(db
+        .start_task(
+            input("Future", Some(now + 60_000)),
+            "11111111111111111111111111111111"
+        )
+        .is_err());
+    db.track(TrackingAction::StopTask { id: task.id }).unwrap();
+    let mut pause = input("Recorded break", Some(now - 10 * 60_000));
+    pause.kind = crate::EntryKind::Break;
+    pause.end_at = Some(now - 5 * 60_000);
+    db.save_entry(None, pause, None).unwrap();
+    assert!(db
+        .start_task(
+            input("Through a break", Some(start)),
+            "22222222222222222222222222222222"
+        )
+        .is_err());
+    assert!(db.tracking_state().unwrap().tasks.is_empty());
+    db.track(TrackingAction::StartBreak).unwrap();
+    let started_at = Utc::now().timestamp_millis();
+    let pause = db.tracking_state().unwrap().active_break.unwrap();
+    let task = db
+        .start_task(
+            input("After break", Some(started_at)),
+            "33333333333333333333333333333333",
+        )
+        .unwrap();
+    assert_eq!(db.entry(pause.id).unwrap().end_at, Some(task.activity_at));
+}
+
+#[test]
+fn restarts_a_recent_task_with_its_original_details_in_a_new_block() {
+    use crate::{EntryKind, TrackingAction};
+
+    let mut db = database();
+    let (midnight, _) = day_bounds("2026-07-15").unwrap();
+    let now = midnight + 12 * 3_600_000;
+    let mut task = input("Morning task", Some(now - 120_000));
+    task.end_at = Some(now - 90_000);
+    task.category_id = Some(2);
+    task.reference = Some(Reference {
+        prefix: "NCR".into(),
+        number: "42".into(),
+    });
+    let older = db.save_entry(None, task, None).unwrap();
+    let mut task = input("morning   TASK", Some(now - 75_000));
+    task.end_at = Some(now - 30_000);
+    task.category_id = older.category_id;
+    task.reference = older.reference.clone();
+    let source = db.save_entry(None, task, None).unwrap();
+    let untimed = db
+        .save_entry(None, input("Untimed note", Some(now - 30_000)), None)
+        .unwrap();
+    let mut pause = input("Break", Some(now - 30_000));
+    pause.kind = EntryKind::Break;
+    pause.end_at = Some(now - 10_000);
+    let pause = db.save_entry(None, pause, None).unwrap();
+    let mut future = input("Future task", Some(now + 60_000));
+    future.end_at = Some(now + 120_000);
+    db.save_entry(None, future, None).unwrap();
+    let mut yesterday = input("Overnight task", Some(midnight - 60_000));
+    yesterday.end_at = Some(midnight + 60_000);
+    db.save_entry(None, yesterday, None).unwrap();
+    assert_eq!(
+        db.recent_tasks(now)
+            .unwrap()
+            .iter()
+            .map(|entry| entry.id)
+            .collect::<Vec<_>>(),
+        [source.id]
+    );
+
+    db.save_category(CategoryInput {
+        id: source.category_id,
+        name: "Archive".into(),
+        color: "#123456".into(),
+        is_active: false,
+    })
+    .unwrap();
+    let key = "9876543210abcdef9876543210abcdef";
+    assert!(db.restart_task(untimed.id, key).is_err());
+    assert!(db.restart_task(pause.id, key).is_err());
+    db.track(TrackingAction::StartBreak).unwrap();
+    let restarted = db.restart_task(source.id, key).unwrap();
+    assert_ne!(restarted.id, source.id);
+    assert_eq!(restarted.description, source.description);
+    assert_eq!(restarted.category_id, source.category_id);
+    assert_eq!(restarted.reference, source.reference);
+    assert!(restarted.activity_at >= now && restarted.end_at.is_none() && restarted.is_running);
+    assert_eq!(db.entry(source.id).unwrap().end_at, source.end_at);
+    assert!(db.tracking_state().unwrap().active_break.is_none());
+    assert_eq!(db.restart_task(source.id, key).unwrap().id, restarted.id);
+}
+
+#[test]
 fn parses_configurable_references() {
     let prefixes = vec!["NCR".into(), "ISSUE".into()];
     for description in ["NCR 2456", "ncr-2456 - checked", "NCR2456"] {

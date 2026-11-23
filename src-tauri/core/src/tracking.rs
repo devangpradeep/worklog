@@ -213,16 +213,42 @@ fn overlap_ms(work: &[(i64, i64)], breaks: &[(i64, i64)]) -> i64 {
     elapsed
 }
 
-pub(crate) fn prepare_task_tracking(tx: &Transaction<'_>, now: i64) -> Result<()> {
+pub(crate) fn prepare_task_tracking(tx: &Transaction<'_>, started_at: i64, now: i64) -> Result<()> {
     let active = running_entries(tx)?;
     if active.len() >= 2 {
         return Err(invalid(
             "Two tasks are already running. Stop one to start another.",
         ));
     }
-    ensure_session(tx, now)?;
+    if active
+        .iter()
+        .any(|entry| entry.kind == EntryKind::Break && started_at < entry.activity_at)
+    {
+        return Err(invalid(
+            "Choose a start time at or after the current break began.",
+        ));
+    }
+    if started_at < now
+        && tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM work_entries WHERE kind = 'break'
+         AND end_at > ?1 AND activity_at < ?2)",
+            [started_at, now],
+            |row| row.get::<_, bool>(0),
+        )?
+    {
+        return Err(invalid("The start time overlaps a recorded break. Choose a later time or correct the break in the timeline."));
+    }
+    ensure_session(tx, started_at)?;
+    if let Some(session) = open_session(tx)?.filter(|session| started_at < session.started_at) {
+        tx.execute(
+            "UPDATE work_sessions SET started_at = ?1 WHERE id = ?2",
+            params![started_at, session.id],
+        )?;
+        flag_review(tx, &local_date(session.started_at)?)?;
+        flag_review(tx, &local_date(started_at)?)?;
+    }
     for entry in active.iter().filter(|entry| entry.kind == EntryKind::Break) {
-        finish_entry(tx, entry, now)?;
+        finish_entry(tx, entry, started_at)?;
     }
     Ok(())
 }
@@ -245,7 +271,7 @@ fn stop_if_running(tx: &Transaction<'_>, id: i64, kind: EntryKind, now: i64) -> 
     Ok(())
 }
 
-fn finish_entry(tx: &Transaction<'_>, entry: &Entry, now: i64) -> Result<()> {
+pub(crate) fn finish_entry(tx: &Transaction<'_>, entry: &Entry, now: i64) -> Result<()> {
     tx.execute(
         "UPDATE work_entries SET end_at = MAX(?1, activity_at), updated_at = ?1, is_running = 0 WHERE id = ?2",
         params![now, entry.id],
@@ -279,7 +305,7 @@ fn open_session(conn: &Connection) -> Result<Option<WorkSession>> {
         .optional()?)
 }
 
-fn running_entries(conn: &Connection) -> Result<Vec<Entry>> {
+pub(crate) fn running_entries(conn: &Connection) -> Result<Vec<Entry>> {
     let mut query = conn.prepare(&format!(
         "SELECT {ENTRY_COLUMNS} FROM work_entries WHERE is_running = 1 ORDER BY activity_at, id"
     ))?;

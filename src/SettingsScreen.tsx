@@ -150,6 +150,12 @@ export default function SettingsScreen({ snapshot, onSaved }: Props) {
         </>}
 
         {section === 'Reminders' && <>
+          <SettingRow title="Task reminders" detail="Remind every 5 minutes while your workday is open with no task running. Reminders pause during breaks.">
+            <Toggle label="Task reminders" checked={settings.taskRemindersEnabled} onChange={value => update('taskRemindersEnabled', value)} />
+          </SettingRow>
+          <SettingRow title="Hourly task check" detail="Ask whether you’re still working on each task after an hour. Keep working to check again in an hour, or switch to your next task.">
+            <Toggle label="Hourly task check" checked={settings.taskChecksEnabled} onChange={value => update('taskChecksEnabled', value)} />
+          </SettingRow>
           <SettingRow title="Daily review reminder" detail="Show a desktop notification when your day is ready to review.">
             <Toggle label="Daily review reminder" checked={settings.remindersEnabled} onChange={value => update('remindersEnabled', value)} />
           </SettingRow>

@@ -104,6 +104,8 @@ fn main() {
             open_dashboard_from_capture,
             take_dashboard_route,
             capture_entry,
+            recent_tasks,
+            restart_task,
             track_work,
             workday_summary,
             update_work_session,

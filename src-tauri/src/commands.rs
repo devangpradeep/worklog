@@ -105,13 +105,17 @@ pub async fn capture_entry(
     category_id: Option<i64>,
     capture_key: String,
     mode: Option<CaptureMode>,
+    started_at: Option<i64>,
 ) -> Reply<Entry> {
     let entry = {
         let mut db = desktop.db()?;
         let input = EntryInput {
             description,
             category_id,
-            activity_at: None,
+            activity_at: match mode.unwrap_or_default() {
+                CaptureMode::Task => started_at,
+                CaptureMode::Quick => None,
+            },
             end_at: None,
             update_end: false,
             kind: Default::default(),
@@ -137,6 +141,29 @@ pub async fn track_work(
     desktop.db()?.track(action).map_err(message)?;
     changed(&app);
     Ok(())
+}
+
+#[tauri::command]
+pub async fn recent_tasks(desktop: State<'_, Desktop>) -> Reply<Vec<Entry>> {
+    desktop
+        .db()?
+        .recent_tasks(Utc::now().timestamp_millis())
+        .map_err(message)
+}
+
+#[tauri::command]
+pub async fn restart_task(
+    app: AppHandle,
+    desktop: State<'_, Desktop>,
+    source_id: i64,
+    capture_key: String,
+) -> Reply<Entry> {
+    let entry = desktop
+        .db()?
+        .restart_task(source_id, &capture_key)
+        .map_err(message)?;
+    changed(&app);
+    Ok(entry)
 }
 
 #[tauri::command]
