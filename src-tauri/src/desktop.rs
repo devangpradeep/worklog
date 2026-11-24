@@ -282,7 +282,7 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
     let stop_task = MenuItem::with_id(app, "stop_task", "Stop task", false, None::<&str>)?;
     let pause = MenuItem::with_id(app, "break", "Take break", true, None::<&str>)?;
     let tracking_divider = PredefinedMenuItem::separator(app)?;
-    let quick = MenuItem::with_id(app, "quick", "Quick Add", true, None::<&str>)?;
+    let quick = MenuItem::with_id(app, "quick", "Quick Capture", true, None::<&str>)?;
     let journal = MenuItem::with_id(app, "journal", "Open Dashboard", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
     let divider = PredefinedMenuItem::separator(app)?;

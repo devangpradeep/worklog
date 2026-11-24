@@ -74,8 +74,23 @@ pub fn hide_capture(app: AppHandle, desktop: State<'_, Desktop>, generation: u64
 }
 
 #[tauri::command]
-pub fn open_capture(app: AppHandle, mode: Option<CaptureMode>) {
+pub fn open_capture(
+    app: AppHandle,
+    mode: Option<CaptureMode>,
+    generation: Option<u64>,
+) -> Reply<()> {
+    if let Some(generation) = generation {
+        let Some(window) = app.get_webview_window("capture") else {
+            return Ok(());
+        };
+        if capture_context(app.state::<Desktop>())?.generation != generation
+            || !window.is_visible().map_err(message)?
+        {
+            return Ok(());
+        }
+    }
     desktop::show_capture_mode(&app, mode.unwrap_or_default());
+    Ok(())
 }
 
 #[tauri::command]
@@ -98,13 +113,12 @@ pub fn take_dashboard_route(desktop: State<'_, Desktop>) -> Option<DashboardRout
 }
 
 #[tauri::command]
-pub async fn capture_entry(
+pub async fn start_task(
     app: AppHandle,
     desktop: State<'_, Desktop>,
     description: String,
     category_id: Option<i64>,
     capture_key: String,
-    mode: Option<CaptureMode>,
     started_at: Option<i64>,
 ) -> Reply<Entry> {
     let entry = {
@@ -112,21 +126,14 @@ pub async fn capture_entry(
         let input = EntryInput {
             description,
             category_id,
-            activity_at: match mode.unwrap_or_default() {
-                CaptureMode::Task => started_at,
-                CaptureMode::Quick => None,
-            },
+            activity_at: started_at,
             end_at: None,
             update_end: false,
             kind: Default::default(),
             reference: None,
             auto_reference: true,
         };
-        match mode.unwrap_or_default() {
-            CaptureMode::Quick => db.save_entry(None, input, Some(&capture_key)),
-            CaptureMode::Task => db.start_task(input, &capture_key),
-        }
-        .map_err(message)?
+        db.start_task(input, &capture_key).map_err(message)?
     };
     changed(&app);
     Ok(entry)

@@ -4,7 +4,7 @@ WorkLog is a personal, local-first work journal for Ubuntu 24.04. It keeps quick
 
 ## Features
 
-- **Quick Capture** opens a small entry window from the top-panel menu, an application shortcut, or the dashboard. Press **Enter** to save and **Esc** to hide the window while keeping your draft.
+- **Quick Capture** opens the workday controls from the top-panel menu, an application shortcut, or the dashboard. Choose **Start task** to enter a task name and press **Enter** to start its timer. Press **Esc** to hide the window and keep your draft.
 - **Workday tracking** records sessions, up to two concurrent task timers, and breaks. The toolbar shows live time worked, and Quick Capture also shows time spent on breaks and how many you’ve completed.
 - **Journal** lets you browse by date, search activities and references, and filter by category. You can edit entries and time ranges or add them after the fact.
 - **Daily review** lets you add notes and mark a day reviewed. Editing the day’s records flags it for another look. Review reminders are configurable.
@@ -35,10 +35,10 @@ npm run tauri build -- --bundles deb
 
 Tauri writes the package under `src-tauri/target/release/bundle/deb/`. Build on Ubuntu 24.04 for your target architecture. [Tauri Debian packaging](https://v2.tauri.app/distribute/debian/)
 
-For the 0.2.15 amd64 build, run the following from the repository root. If you are upgrading, choose **Quit WorkLog** from the tray first.
+For the 0.2.16 amd64 build, run the following from the repository root. If you are upgrading, choose **Quit WorkLog** from the tray first.
 
 ```bash
-sudo apt install ./src-tauri/target/release/bundle/deb/WorkLog_0.2.15_amd64.deb
+sudo apt install ./src-tauri/target/release/bundle/deb/WorkLog_0.2.16_amd64.deb
 ```
 
 Open **WorkLog** from Applications or run `worklog` in a terminal.
@@ -57,7 +57,7 @@ Select **By activity** in the timeline to see the total in hours and minutes for
 
 **Time worked** totals sessions that started on the selected date, subtracting recorded breaks. The live total pauses during a break and stays available in the toolbar while you scroll. Overlapping time counts once, and overnight sessions appear on the date they started. Use the sidebar button in the toolbar to collapse or expand the full left column.
 
-Quick Capture shows the workday, running tasks, and totals below the entry field. The break duration includes an ongoing break, and the completed count updates when it ends. With a workday open and no task running, choose **Take break**. When two tasks are running, **Manage running tasks** in the tray opens Quick Capture so you can stop either timer.
+Quick Capture shows the workday, running tasks, and totals. **Start task** and **Start second task** open the task form. The break duration includes an ongoing break, and the completed count updates when it ends. With a workday open and no task running, choose **Take break**. When two tasks are running, **Manage running tasks** in the tray opens Quick Capture so you can stop either timer.
 
 Choose **Open dashboard** at the top of Quick Capture to return to the journal. Your draft is ready to resume when you reopen Quick Capture.
 
@@ -98,7 +98,7 @@ The test suite covers journal entries, workday totals, reviews, reminders, datab
 ### GNOME and Wayland smoke test
 
 - [ ] Launch the installed app and confirm that today’s timeline opens. Try Quick Capture from the tray, Applications launcher, and desktop shortcut. Verify that a second launch opens the existing app.
-- [ ] Enter `NCR 2456 - Tested the issue` in Quick Capture and press Enter twice. Verify that one entry is saved with its reference. Confirm that an unsaved draft survives **Esc**.
+- [ ] Confirm Quick Capture opens with the workday controls. Choose **Start task**, enter `NCR 2456 - Test the issue`, and press Enter twice. Verify that one timer starts with its reference. Confirm that an unsaved task draft survives **Esc**.
 - [ ] Start a second task and verify the warning and both independent timers. Stop one task, take a break from the dashboard, then end the day. Check worked time, break duration, and completed breaks in Quick Capture. Edit the session and verify the total updates.
 - [ ] Scroll to the end of a long timeline with the mouse wheel and keyboard in both a maximized and a small window. Check that the toolbar stays visible and further scrolling leaves the last entry in place.
 - [ ] Search and filter the journal, edit categories, and review a day. Confirm that a later edit flags the day for review.

@@ -1,6 +1,6 @@
 import { ArrowLeft, Check, CornerDownLeft, History, LayoutDashboard, TriangleAlert, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { api, errorText, type CaptureContext, type CaptureMode, type Entry, type TrackingAction } from './api'
+import { api, errorText, type CaptureContext, type Entry, type TrackingAction } from './api'
 import { useData, useNativeEvent, useToday, useWorkdaySummary } from './hooks'
 import { dateTimeInput, localDay, timestampFromInput, type DateTimeInput } from './time'
 import { Brand, CategoryOptions } from './ui'
@@ -16,12 +16,12 @@ interface Draft {
   startedAt?: DateTimeInput
 }
 
-const storageKey = (mode: CaptureMode) => mode === 'task' ? 'worklog.task.draft' : 'worklog.capture.draft'
+const storageKey = 'worklog.task.draft'
 const emptyDraft: Draft = { description: '' }
 
-function readDraft(mode: CaptureMode): Draft {
+function readDraft(): Draft {
   try {
-    const value: unknown = JSON.parse(localStorage.getItem(storageKey(mode)) ?? 'null')
+    const value: unknown = JSON.parse(localStorage.getItem(storageKey) ?? 'null')
     if (value && typeof value === 'object' && 'description' in value && typeof value.description === 'string') {
       return value as Draft
     }
@@ -37,12 +37,10 @@ function createKey() {
 
 export default function Capture() {
   const { snapshot, revision, error: dataError, refresh } = useData()
-  const [drafts, setDrafts] = useState(() => ({ quick: readDraft('quick'), task: readDraft('task') }))
+  const [draft, setDraft] = useState(readDraft)
   const [context, setContext] = useState<CaptureContext>()
   const latestContext = useRef<CaptureContext | undefined>(undefined)
-  const mode = context?.mode ?? 'quick'
-  const taskMode = mode === 'task'
-  const draft = drafts[mode]
+  const taskMode = context?.mode === 'task'
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -71,13 +69,13 @@ export default function Capture() {
   const settings = snapshot?.settings
   const startChoice = draft.start ?? 'now'
 
-  function update(value: Draft, target = mode) {
-    setDrafts(drafts => ({ ...drafts, [target]: value }))
+  function update(value: Draft) {
+    setDraft(value)
     try {
       if (value.description) {
-        localStorage.setItem(storageKey(target), JSON.stringify(value))
+        localStorage.setItem(storageKey, JSON.stringify(value))
       } else {
-        localStorage.removeItem(storageKey(target))
+        localStorage.removeItem(storageKey)
       }
     } catch (error) {
       console.error(error)
@@ -114,7 +112,8 @@ export default function Capture() {
 
   async function dismiss() {
     try {
-      await api.hideCapture((context ?? await api.captureContext()).generation)
+      const { generation } = context ?? await api.captureContext()
+      await api.hideCapture(generation)
     } catch (error) {
       setError(errorText(error))
     }
@@ -150,28 +149,27 @@ export default function Capture() {
 
   async function submit(event: FormEvent) {
     event.preventDefault()
-    if (!context || !settings || !draft.description.trim() || running.current || saved || changingTracking || taskLimit) return
+    if (!taskMode || !context || !settings || !draft.description.trim() || running.current || saved || changingTracking || taskLimit) return
     running.current = true
     setBusy(true)
     setError('')
     const captureKey = draft.key ?? createKey()
     update({ ...draft, categoryId, key: captureKey })
     try {
-      const { generation, mode } = context
+      const { generation } = context
       let startedAt: number | null = null
-      if (mode === 'task' && startChoice === '15m') startedAt = Date.now() - 15 * 60_000
-      if (mode === 'task' && startChoice === 'custom' && draft.startedAt) {
+      if (startChoice === '15m') startedAt = Date.now() - 15 * 60_000
+      if (startChoice === 'custom' && draft.startedAt) {
         startedAt = timestampFromInput(draft.startedAt, settings.timeFormat, 'start')
       }
-      await api.capture(draft.description, categoryId, captureKey, mode, startedAt)
-      update(emptyDraft, mode)
+      await api.startTask(draft.description, categoryId, captureKey, startedAt)
+      update(emptyDraft)
       if (latestContext.current?.generation !== generation) return
       if (settings.showConfirmation) setSaved(true)
       const finish = () => {
         setSaved(false)
-        if (settings.hideAfterSave) {
-          void api.hideCapture(generation).catch(error => setError(errorText(error)))
-        }
+        const action = settings.hideAfterSave ? api.hideCapture(generation) : api.openCapture('quick', generation)
+        void action.catch(error => setError(errorText(error)))
       }
       if (settings.showConfirmation) {
         timer.current = window.setTimeout(finish, settings.hideAfterSave ? 520 : 1600)
@@ -186,6 +184,11 @@ export default function Capture() {
       requestAnimationFrame(() => input.current?.focus())
     }
   }
+
+  const recentTasksButton = <button type="button" className="button capture-header-button" disabled={controlsDisabled} onClick={() => {
+    setError('')
+    setShowRecent(true)
+  }}><History size={14} aria-hidden="true" /> Recent tasks</button>
 
   return (
     <main className="capture-shell" onKeyDown={event => {
@@ -203,7 +206,8 @@ export default function Capture() {
         <h1>{showRecent ? 'Recent tasks' : taskMode ? 'Start task' : 'Quick Capture'}</h1>
         <div className="capture-header-actions">
           {taskMode && !showRecent && <button type="button" className="button capture-header-button" disabled={controlsDisabled}
-            onClick={() => void runControl(() => api.openCapture('quick'))}><ArrowLeft size={14} /> Log activity</button>}
+            onClick={() => void runControl(() => api.openCapture('quick'))}><ArrowLeft size={14} /> Back</button>}
+          {!taskMode && !showRecent && recentTasksButton}
           <button type="button" className="button capture-header-button" disabled={controlsDisabled}
             onClick={() => context && void runControl(() => api.openDashboard(context.generation))}>
             <LayoutDashboard size={14} aria-hidden="true" /> Open dashboard
@@ -213,24 +217,20 @@ export default function Capture() {
       </header>
       {showRecent && <RecentTasks key={today} categories={snapshot?.categories ?? []} format={settings?.timeFormat ?? '24h'}
         revision={revision} disabled={controlsDisabled} runningCount={taskCount} onBreak={!!snapshot?.tracking.activeBreak} onStart={restartTask} />}
-      {!showRecent && <form className="capture-form" onSubmit={submit}>
+      {taskMode && !showRecent && <form className="capture-form" onSubmit={submit}>
         <div className="flex items-stretch gap-2">
           <input
-            autoFocus ref={input} aria-label={taskMode ? 'Task' : 'Activity'} placeholder={taskMode ? 'What are you working on?' : 'What did you work on?'}
+            autoFocus ref={input} aria-label="Task" placeholder="What are you working on?"
             aria-describedby={showTaskNotice ? 'capture-task-notice' : undefined}
-            value={draft.description} readOnly={!context || busy || (saved && settings?.hideAfterSave)} maxLength={4000}
+            value={draft.description} readOnly={busy || saved} maxLength={4000}
             onChange={event => {
               setError('')
-              if (!settings?.hideAfterSave) {
-                window.clearTimeout(timer.current)
-                setSaved(false)
-              }
               update({ ...draft, description: event.target.value, key: undefined })
             }}
           />
           <button className="button primary capture-save" disabled={controlsDisabled || taskLimit || !settings || !draft.description.trim()}>
             {saved ? <Check size={16} /> : <CornerDownLeft size={16} />}
-            {saved ? (taskMode ? 'Started' : 'Saved') : busy ? 'Saving' : taskMode ? startLabel : 'Save'}
+            {saved ? 'Started' : busy ? 'Starting…' : startLabel}
           </button>
         </div>
         <div className="capture-options">
@@ -242,14 +242,11 @@ export default function Capture() {
               <option value="">No category</option>
               <CategoryOptions categories={snapshot?.categories ?? []} />
             </select>
-            <button type="button" className="button capture-header-button" disabled={controlsDisabled} onClick={() => {
-              setError('')
-              setShowRecent(true)
-            }}><History size={14} aria-hidden="true" /> Recent tasks</button>
+            {recentTasksButton}
           </div>
-          <span className="capture-hint"><kbd>Enter</kbd> to {taskMode ? 'start' : 'save'} <span aria-hidden="true">·</span> <kbd>Esc</kbd> to hide</span>
+          <span className="capture-hint"><kbd>Enter</kbd> to start <span aria-hidden="true">·</span> <kbd>Esc</kbd> to hide</span>
         </div>
-        {taskMode && <div className="capture-start-time">
+        <div className="capture-start-time">
           <label htmlFor="capture-start">Started</label>
           <select id="capture-start" value={startChoice} disabled={controlsDisabled} onChange={event => {
             const start = event.target.value as Draft['start']
@@ -260,8 +257,8 @@ export default function Capture() {
             <option value="15m">15 minutes ago</option>
             <option value="custom">Custom time…</option>
           </select>
-        </div>}
-        {taskMode && startChoice === 'custom' && draft.startedAt && <DateTimeFields label="Start"
+        </div>
+        {startChoice === 'custom' && draft.startedAt && <DateTimeFields label="Start"
           value={draft.startedAt} format={settings?.timeFormat ?? '24h'} onChange={startedAt => {
             update({ ...draft, startedAt, key: undefined })
             setError('')
@@ -270,7 +267,7 @@ export default function Capture() {
           <TriangleAlert size={14} aria-hidden="true" />
           {taskLimit ? 'Two tasks are running. Stop one to start another.' : 'Your current task will keep running.'}
         </p>}
-        {saved && <span className="sr-only" role="status">{taskMode ? 'Task started' : 'Activity saved'}</span>}
+        {saved && <span className="sr-only" role="status">Task started</span>}
       </form>}
       {!showRecent && snapshot && <CaptureTracking
         tracking={snapshot.tracking}

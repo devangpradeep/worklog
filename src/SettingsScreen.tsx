@@ -122,11 +122,11 @@ export default function SettingsScreen({ snapshot, onSaved }: Props) {
         </>}
 
         {section === 'Quick Capture' && <>
-          <SettingRow title="Hide after saving">
-            <Toggle label="Hide after saving" checked={settings.hideAfterSave} onChange={value => update('hideAfterSave', value)} />
+          <SettingRow title="Hide after starting a task">
+            <Toggle label="Hide after starting a task" checked={settings.hideAfterSave} onChange={value => update('hideAfterSave', value)} />
           </SettingRow>
-          <SettingRow title="Show save confirmation">
-            <Toggle label="Show save confirmation" checked={settings.showConfirmation} onChange={value => update('showConfirmation', value)} />
+          <SettingRow title="Confirm when a task starts">
+            <Toggle label="Confirm when a task starts" checked={settings.showConfirmation} onChange={value => update('showConfirmation', value)} />
           </SettingRow>
           <SettingRow title="Default category">
             <select aria-label="Default category" value={defaultCategory ?? ''} onChange={event => update('defaultCategory', event.target.value ? Number(event.target.value) : null)}>
@@ -134,7 +134,7 @@ export default function SettingsScreen({ snapshot, onSaved }: Props) {
               <CategoryOptions categories={snapshot.categories} />
             </select>
           </SettingRow>
-          <SettingRow title="Remember last category" detail="Start with the category used for the last quick entry.">
+          <SettingRow title="Remember last category" detail="Start with the category used for the last task started in Quick Capture.">
             <Toggle label="Remember last category" checked={settings.rememberCategory} onChange={value => update('rememberCategory', value)} />
           </SettingRow>
           {snapshot.x11Shortcuts && <SettingRow title="Global shortcut" detail="Enter a combination such as Ctrl+Shift+Space. Leave it blank to disable.">
