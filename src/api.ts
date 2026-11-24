@@ -115,11 +115,11 @@ export const api = {
   snapshot: () => invoke<Snapshot>('snapshot'),
   captureContext: () => invoke<CaptureContext>('capture_context'),
   hideCapture: (generation: number) => invoke<void>('hide_capture', { generation }),
-  openCapture: (mode: CaptureMode = 'quick') => invoke<void>('open_capture', { mode }),
+  openCapture: (mode: CaptureMode = 'quick', generation?: number) => invoke<void>('open_capture', { mode, generation }),
   openDashboard: (generation: number) => invoke<void>('open_dashboard_from_capture', { generation }),
   takeRoute: () => invoke<DashboardRoute | null>('take_dashboard_route'),
-  capture: (description: string, categoryId: number | null, captureKey: string, mode: CaptureMode, startedAt: number | null = null) =>
-    invoke<Entry>('capture_entry', { description, categoryId, captureKey, mode, startedAt }),
+  startTask: (description: string, categoryId: number | null, captureKey: string, startedAt: number | null) =>
+    invoke<Entry>('start_task', { description, categoryId, captureKey, startedAt }),
   recentTasks: () => invoke<Entry[]>('recent_tasks'),
   restartTask: (sourceId: number, captureKey: string) => invoke<Entry>('restart_task', { sourceId, captureKey }),
   track: (action: TrackingAction) => invoke<void>('track_work', { action }),

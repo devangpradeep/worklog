@@ -103,7 +103,7 @@ fn main() {
             open_capture,
             open_dashboard_from_capture,
             take_dashboard_route,
-            capture_entry,
+            start_task,
             recent_tasks,
             restart_task,
             track_work,

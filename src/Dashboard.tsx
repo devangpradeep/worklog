@@ -231,7 +231,7 @@ export default function Dashboard() {
               onKeyDown={event => { if (event.key === 'Escape') { setSearch(''); setQuery('') } }} />
             {search ? <button className="icon-button" aria-label="Clear search" onClick={() => { setSearch(''); setQuery(''); searchInput.current?.focus() }}><X size={15} /></button> : <kbd>Ctrl F</kbd>}
           </div>}
-          <button className="button primary toolbar-add" onClick={() => void openCapture()} title="Quick Add (Ctrl+N)"><Plus size={18} /> Quick Add</button>
+          <button className="button primary toolbar-add" onClick={() => void openCapture()} title="Quick Capture (Ctrl+N)"><Clock3 size={18} /> Quick Capture</button>
         </header>
         <main className="workspace-scroll" ref={scroll} tabIndex={0} aria-label={page === 'journal' ? 'Journal' : 'Settings'}>
           <div className="page-content">
